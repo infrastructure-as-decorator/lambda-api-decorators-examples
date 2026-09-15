@@ -1,0 +1,59 @@
+name: Quick Start REST
+
+on:
+  push:
+    paths:
+      - "quickstart-rest/**"
+      - ".github/workflows/quickstart-rest.yml"
+  pull_request:
+    paths:
+      - "quickstart-rest/**"
+      - ".github/workflows/quickstart-rest.yml"
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: quickstart-rest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install AWS CDK CLI
+        run: npm install --global aws-cdk
+
+      - name: Confirm Docker is available
+        run: docker info
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements-dev.txt
+
+      - name: Import Lambda API Decorators packages
+        run: |
+          python -c "from importlib.metadata import version; import lambda_api_decorators; import lambda_api_decorators_cdk; print('lambda-api-decorators-cdk', version('lambda-api-decorators-cdk'))"
+
+      - name: Run tests without skips
+        shell: bash
+        run: |
+          set -o pipefail
+          pytest -q -rs | tee "$RUNNER_TEMP/pytest-output.txt"
+          ! grep -Eq '[0-9]+ skipped' "$RUNNER_TEMP/pytest-output.txt"
+
+      - name: Synthesize the CDK app
+        run: cdk synth --quiet
+
+      - name: Confirm generated artifacts are not committed
+        shell: bash
+        run: |
+          test -z "$(git ls-files -- 'cdk.out/**' '.cdk.staging/**' '**/__pycache__/**' '**/.pytest_cache/**' '*.pyc')"
+          git diff --exit-code
