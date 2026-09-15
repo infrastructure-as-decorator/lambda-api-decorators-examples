@@ -14,6 +14,32 @@ Lambda handler for `GET /hello`.
 Creating the environment, installing dependencies, and running `cdk synth` do
 not require AWS credentials.
 
+## Stack
+
+The stack configures the Lambda source directory and Python runtime explicitly:
+
+```python
+from aws_cdk import Stack, aws_lambda as lambda_
+from constructs import Construct
+from lambda_api_decorators_cdk import LambdaApi, LambdaApiConfig
+
+
+class QuickstartRestStack(Stack):
+    def __init__(self, scope: Construct, construct_id: str, **kwargs) -> None:
+        super().__init__(scope, construct_id, **kwargs)
+
+        config = LambdaApiConfig(
+            runtime=lambda_.Runtime.PYTHON_3_14,
+        )
+
+        LambdaApi(
+            self,
+            "Api",
+            lambda_path="lambdas",
+            config=config,
+        )
+```
+
 ## Set up
 
 From this directory, create a virtual environment:
@@ -40,16 +66,19 @@ Or activate it with Command Prompt (CMD):
 .venv\Scripts\activate.bat
 ```
 
-Install the CDK app dependencies:
+Install the CDK app and test dependencies, then run the complete test suite:
 
 ```console
-python -m pip install -r requirements.txt
+python -m pip install -r requirements-dev.txt
+pytest -q
 ```
 
-Synthesize the CloudFormation template (Docker must be running):
+The infrastructure tests and CDK synthesis bundle the Lambda source, so Docker
+must be installed and running for both. Synthesize the CloudFormation template
+with:
 
 ```console
-cdk synth
+cdk synth --quiet
 ```
 
 ## Deploy (optional)

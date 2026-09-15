@@ -1,10 +1,10 @@
 import json
 
-from lambda_api_decorators import get
+from lambda_api_decorators import GET
 
 
-@get("/hello")
-def hello(event, context):
+@GET("/hello")
+def lambda_handler(event, context):
     return {
         "statusCode": 200,
         "headers": {"Content-Type": "application/json"},
