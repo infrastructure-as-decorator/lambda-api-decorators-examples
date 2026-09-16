@@ -8,3 +8,6 @@ its own dependencies and setup instructions.
 
 - [`quickstart-rest`](quickstart-rest/) — create a minimal REST API with one
   `GET /hello` route.
+- [`http-api`](http-api/) — create a minimal API Gateway HTTP API with one
+  `GET /hello` route. It uses the HTTP API resource model, while
+  `quickstart-rest` uses the REST API resource model.

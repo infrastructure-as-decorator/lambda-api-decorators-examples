@@ -1,22 +1,28 @@
-name: Quick Start REST
+name: Examples
 
 on:
   push:
     paths:
       - "quickstart-rest/**"
+      - "http-api/**"
       - ".github/workflows/quickstart-rest.yml"
   pull_request:
     paths:
       - "quickstart-rest/**"
+      - "http-api/**"
       - ".github/workflows/quickstart-rest.yml"
   workflow_dispatch:
 
 jobs:
   test:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        example: [quickstart-rest, http-api]
     defaults:
       run:
-        working-directory: quickstart-rest
+        working-directory: ${{ matrix.example }}
 
     steps:
       - uses: actions/checkout@v4
@@ -40,7 +46,7 @@ jobs:
 
       - name: Import Lambda API Decorators packages
         run: |
-          python -c "from importlib.metadata import version; import lambda_api_decorators; import lambda_api_decorators_cdk; print('lambda-api-decorators-cdk', version('lambda-api-decorators-cdk'))"
+          python -c "from importlib.metadata import version; import lambda_api_decorators; import lambda_api_decorators_cdk; print('lambda-api-decorators', version('lambda-api-decorators')); print('lambda-api-decorators-cdk', version('lambda-api-decorators-cdk'))"
 
       - name: Run tests without skips
         shell: bash
