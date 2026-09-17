@@ -2,11 +2,13 @@ name: Examples
 
 on:
   push:
+    branches: [main]
     paths:
       - "quickstart-rest/**"
       - "http-api/**"
       - ".github/workflows/quickstart-rest.yml"
   pull_request:
+    branches: [main]
     paths:
       - "quickstart-rest/**"
       - "http-api/**"
