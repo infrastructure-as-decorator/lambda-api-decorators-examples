@@ -3,6 +3,15 @@
 This independent AWS CDK app defines a default REST API backed by a single
 Lambda handler for `GET /hello`.
 
+## Project links
+
+- [Project site](https://infrastructure-as-decorator.github.io/)
+- [Core package](https://github.com/infrastructure-as-decorator/lambda-api-decorators)
+- [CDK integration](https://github.com/infrastructure-as-decorator/lambda-api-decorators-cdk)
+- [Examples repository](https://github.com/infrastructure-as-decorator/lambda-api-decorators-examples)
+- [Issues](https://github.com/infrastructure-as-decorator/lambda-api-decorators-examples/issues)
+- [All examples](../)
+
 ## Prerequisites
 
 - Python 3.10 or newer
