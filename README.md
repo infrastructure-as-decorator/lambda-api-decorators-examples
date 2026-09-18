@@ -19,3 +19,8 @@ its own dependencies and setup instructions.
 - [`http-api`](http-api/) — create a minimal API Gateway HTTP API with one
   `GET /hello` route. It uses the HTTP API resource model, while
   `quickstart-rest` uses the REST API resource model.
+- [`rest-api-dynamodb`](rest-api-dynamodb/) — deploy a real API Gateway REST
+  CRUD API backed by a real DynamoDB `Orders` table.
+
+Each example is independent. Install its requirements from that example's
+directory; no local package paths or editable installs are required.

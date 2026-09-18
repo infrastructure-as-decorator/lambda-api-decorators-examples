@@ -6,12 +6,14 @@ on:
     paths:
       - "quickstart-rest/**"
       - "http-api/**"
+      - "rest-api-dynamodb/**"
       - ".github/workflows/quickstart-rest.yml"
   pull_request:
     branches: [main]
     paths:
       - "quickstart-rest/**"
       - "http-api/**"
+      - "rest-api-dynamodb/**"
       - ".github/workflows/quickstart-rest.yml"
   workflow_dispatch:
 
@@ -21,7 +23,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        example: [quickstart-rest, http-api]
+        example: [quickstart-rest, http-api, rest-api-dynamodb]
     defaults:
       run:
         working-directory: ${{ matrix.example }}
@@ -63,5 +65,5 @@ jobs:
       - name: Confirm generated artifacts are not committed
         shell: bash
         run: |
-          test -z "$(git ls-files -- 'cdk.out/**' '.cdk.staging/**' '**/__pycache__/**' '**/.pytest_cache/**' '*.pyc')"
+          test -z "$(git ls-files -- 'cdk.out/**' '.cdk.staging/**' '**/__pycache__/**' '**/.pytest_cache/**' '**/.venv/**' '*.pyc' '**/*.zip' '**/.dynamodb/**')"
           git diff --exit-code
