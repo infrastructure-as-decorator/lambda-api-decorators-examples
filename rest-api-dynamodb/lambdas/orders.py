@@ -16,7 +16,7 @@ def response(status_code, payload):
     return {
         "statusCode": status_code,
         "headers": JSON_HEADERS,
-        "body": json.dumps(payload),
+        "body": "" if status_code == 204 else json.dumps(payload),
     }
 
 
@@ -31,7 +31,7 @@ def request_json(event):
 
 
 def order_id(event):
-    return (event.get("pathParameters") or {}).get("order_id")
+    return (event.get("pathParameters") or {}).get("id")
 
 
 def missing_fields(order):

@@ -1,18 +1,16 @@
-from lambda_api_decorators import PUT, grant_dynamodb
+from lambda_api_decorators import PUT, environment, grant_dynamodb
 
-from orders import missing_fields, order_id, request_json, response, table
+from orders import order_id, request_json, response, table
 
 
-@PUT("/orders/{order_id}")
+@PUT("/orders/{id}")
 @grant_dynamodb("orders", "write")
+@environment("TABLE_NAME")
 def lambda_handler(event, context):
     identifier = order_id(event)
     order, error = request_json(event)
     if error:
         return error
-    missing = missing_fields(order)
-    if missing:
-        return response(400, {"error": "Missing required fields", "fields": missing})
     existing = table().get_item(Key={"id": identifier}).get("Item")
     if existing is None:
         return response(404, {"error": "Order not found"})
