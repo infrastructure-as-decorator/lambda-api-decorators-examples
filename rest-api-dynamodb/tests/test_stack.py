@@ -99,14 +99,38 @@ def test_each_handler_has_exactly_one_http_decorator():
 def test_post_decorator_contract_is_exact():
     tree = ast.parse((ROOT / "lambdas" / "create_order.py").read_text())
     handler = next(node for node in ast.walk(tree) if isinstance(node, ast.FunctionDef) and node.name == "lambda_handler")
-    actual = []
-    for decorator in handler.decorator_list:
-        assert isinstance(decorator, ast.Call) and isinstance(decorator.func, ast.Name)
-        actual.append(ast.unparse(decorator))
+    def decorator_name(node):
+        parts = []
+        while isinstance(node, ast.Attribute):
+            parts.append(node.attr)
+            node = node.value
+        assert isinstance(node, ast.Name)
+        parts.append(node.id)
+        return ".".join(reversed(parts))
+
+    def constant_value(node):
+        assert isinstance(node, ast.Constant)
+        return node.value
+
+    def signature(node):
+        assert isinstance(node, ast.Call)
+        return (
+            decorator_name(node.func),
+            tuple(constant_value(argument) for argument in node.args),
+            tuple((keyword.arg, constant_value(keyword.value)) for keyword in node.keywords),
+        )
+
+    actual = [signature(decorator) for decorator in handler.decorator_list]
     assert actual == [
-        'POST("/orders")', 'grant_dynamodb("orders", "write")', "memory_size(1024)", "timeout(15)",
-        'environment("STAGE", "TABLE_NAME")', 'runtime("python3.12")', 'role("api-role")',
-        'description("Configured endpoint")', 'name("configured-handler")',
+        ("POST", ("/orders",), ()),
+        ("grant_dynamodb", ("orders", "write"), ()),
+        ("memory_size", (1024,), ()),
+        ("timeout", (15,), ()),
+        ("environment", ("STAGE", "TABLE_NAME"), ()),
+        ("runtime", ("python3.12",), ()),
+        ("role", ("api-role",), ()),
+        ("description", ("Configured endpoint",), ()),
+        ("name", ("configured-handler",), ()),
     ]
 
 
