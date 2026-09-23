@@ -1,15 +1,16 @@
 # REST API + DynamoDB
 
 Independent AWS CDK Python example that builds a REST API backed by a real
-DynamoDB table named `Orders`. The five functions are grouped by resource in
-`lambdas/orders.py`, while shared runtime code is provided by the `orders`
-AWS Lambda Layer.
+DynamoDB table named `Orders`. It also creates an audit bucket whose read
+permissions demonstrate role configuration. The five functions are grouped by
+resource in `lambdas/orders.py`, while shared runtime code is provided by the
+`orders` AWS Lambda Layer.
 
 ## Architecture
 
 The stack contains one API Gateway REST API, one on-demand DynamoDB table with
-string partition key `id`, and five independent Lambda functions. Each
-function declares exactly one route:
+string partition key `id`, one S3 audit bucket, and five independent Lambda
+functions. Each function declares exactly one route:
 
 | Method | Path | Access |
 | --- | --- | --- |
@@ -46,7 +47,8 @@ published Layer directory is discovered and attached to each function.
 The POST function demonstrates named configuration with Python 3.12, 1024 MB,
 15 seconds, `STAGE` and `TABLE_NAME`, the mutable `api-role`, and the function
 name `configured-handler`. Other functions use independent CDK-created roles
-and the default Python 3.14 runtime.
+and the default Python 3.14 runtime. `api-role` receives read access to the
+audit bucket through `grant_read`; the handlers do not use that bucket.
 
 ## Prerequisites
 
