@@ -6,9 +6,12 @@ from types import SimpleNamespace
 
 import pytest
 
-LAMBDA_DIR = Path(__file__).parents[1] / "lambdas"
-sys.path.insert(0, str(LAMBDA_DIR))
-pytest.importorskip("lambda_api_decorators", reason="published lambda-api-decorators is not installed")
+ROOT = Path(__file__).parents[1]
+LAYER_PYTHON_DIR = ROOT / "layers" / "orders" / "python"
+pytest.importorskip(
+    "lambda_api_decorators",
+    reason="published lambda-api-decorators is not installed",
+)
 
 
 class FakeTable:
@@ -41,17 +44,27 @@ class FakeResource:
 
 @pytest.fixture
 def handlers(monkeypatch):
+    """Expose the layer exactly as AWS does through /opt/python."""
     table = FakeTable([{"id": "1", "customer": "Ada", "total": 10}])
     monkeypatch.setenv("TABLE_NAME", "Orders-test")
     monkeypatch.setenv("STAGE", "test")
-    monkeypatch.setitem(sys.modules, "boto3", SimpleNamespace(resource=lambda service: FakeResource(table)))
-    for module_name in ("orders", "list_orders", "get_order", "create_order", "update_order", "delete_order"):
+    monkeypatch.syspath_prepend(str(ROOT))
+    monkeypatch.syspath_prepend(str(LAYER_PYTHON_DIR))
+    monkeypatch.setitem(
+        sys.modules,
+        "boto3",
+        SimpleNamespace(resource=lambda service: FakeResource(table)),
+    )
+    for module_name in ("orders_shared", "lambdas.orders"):
         sys.modules.pop(module_name, None)
-    return table
+
+    handlers_module = importlib.import_module("lambdas.orders")
+    handlers_module.table = lambda: table
+    return table, handlers_module
 
 
-def invoke(module_name, event):
-    result = importlib.import_module(module_name).lambda_handler(event, None)
+def invoke(handlers_module, function_name, event):
+    result = getattr(handlers_module, function_name)(event, None)
     assert set(result) == {"statusCode", "headers", "body"}
     assert result["headers"] == {"Content-Type": "application/json"}
     assert isinstance(result["statusCode"], int)
@@ -63,39 +76,54 @@ def payload(result):
     return json.loads(result["body"])
 
 
-def test_get_orders_returns_200_and_json_list(handlers):
-    result = invoke("list_orders", {})
+def test_list_orders_returns_200_and_json_list(handlers):
+    table, module = handlers
+    result = invoke(module, "list_orders", {})
     assert result["statusCode"] == 200
     assert payload(result) == [{"id": "1", "customer": "Ada", "total": 10}]
+    assert table.items["1"]["customer"] == "Ada"
 
 
 @pytest.mark.parametrize("order_id, status", [("1", 200), ("missing", 404)])
-def test_get_order_returns_200_when_present_and_404_when_absent(handlers, order_id, status):
-    result = invoke("get_order", {"pathParameters": {"id": order_id}})
+def test_get_order_returns_200_when_present_and_404_when_absent(
+    handlers, order_id, status
+):
+    _table, module = handlers
+    result = invoke(module, "get_order", {"pathParameters": {"id": order_id}})
     assert result["statusCode"] == status
 
 
-def test_post_requires_id_stores_object_and_returns_201(handlers):
+def test_create_order_requires_id_stores_object_and_returns_201(handlers):
+    table, module = handlers
     order = {"id": "2", "customer": "Lin"}
-    result = invoke("create_order", {"body": json.dumps(order)})
+    result = invoke(module, "create_order", {"body": json.dumps(order)})
     assert result["statusCode"] == 201
     assert payload(result) == order
-    assert handlers.items["2"] == order
+    assert table.items["2"] == order
 
 
-def test_put_uses_path_id_updates_and_returns_200(handlers):
-    result = invoke("update_order", {"pathParameters": {"id": "1"}, "body": json.dumps({"customer": "Grace"})})
+def test_update_order_uses_path_id_updates_and_returns_200(handlers):
+    table, module = handlers
+    result = invoke(
+        module,
+        "update_order",
+        {"pathParameters": {"id": "1"}, "body": json.dumps({"customer": "Grace"})},
+    )
     assert result["statusCode"] == 200
     assert payload(result) == {"id": "1", "customer": "Grace"}
-    assert handlers.items["1"] == {"id": "1", "customer": "Grace"}
+    assert table.items["1"] == {"id": "1", "customer": "Grace"}
 
 
-def test_delete_removes_order_and_returns_204(handlers):
-    result = invoke("delete_order", {"pathParameters": {"id": "1"}})
+def test_delete_order_removes_order_and_returns_204(handlers):
+    table, module = handlers
+    result = invoke(module, "delete_order", {"pathParameters": {"id": "1"}})
     assert result["statusCode"] == 204
-    assert "1" not in handlers.items
+    assert "1" not in table.items
 
 
-@pytest.mark.parametrize("event", [{"body": "not-json"}, {"body": json.dumps({"customer": "Missing id"})}])
-def test_post_invalid_json_or_missing_id_returns_400(handlers, event):
-    assert invoke("create_order", event)["statusCode"] == 400
+@pytest.mark.parametrize(
+    "event", [{"body": "not-json"}, {"body": json.dumps({"customer": "Missing id"})}]
+)
+def test_create_order_invalid_json_or_missing_id_returns_400(handlers, event):
+    _table, module = handlers
+    assert invoke(module, "create_order", event)["statusCode"] == 400

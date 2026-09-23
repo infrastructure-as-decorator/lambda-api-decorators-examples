@@ -1,12 +1,15 @@
 # REST API + DynamoDB
 
-Independent AWS CDK Python example that builds a REST API with five independent
-Lambda handlers backed by a real DynamoDB table named `Orders`.
+Independent AWS CDK Python example that builds a REST API backed by a real
+DynamoDB table named `Orders`. The five functions are grouped by resource in
+`lambdas/orders.py`, while shared runtime code is provided by the `orders`
+AWS Lambda Layer.
 
 ## Architecture
 
 The stack contains one API Gateway REST API, one on-demand DynamoDB table with
-string partition key `id`, and one Lambda per route:
+string partition key `id`, and five independent Lambda functions. Each
+function declares exactly one route:
 
 | Method | Path | Access |
 | --- | --- | --- |
@@ -15,6 +18,30 @@ string partition key `id`, and one Lambda per route:
 | POST | `/orders` | DynamoDB write |
 | PUT | `/orders/{id}` | DynamoDB write |
 | DELETE | `/orders/{id}` | DynamoDB write |
+
+The handlers import `orders_shared` from the `orders` Layer through the
+standard Lambda `/opt/python` import root. `@layer("orders")` associates every
+function with that Layer; the Layer does not grant DynamoDB permissions.
+
+## Project layout
+
+```text
+rest-api-dynamodb/
+├── lambdas/
+│   ├── __init__.py
+│   ├── orders.py
+│   └── requirements.txt
+└── layers/
+    └── orders/
+        ├── requirements.txt
+        └── python/
+            └── orders_shared.py
+```
+
+`lambdas/orders.py` contains `list_orders`, `get_order`, `create_order`,
+`update_order`, and `delete_order`. The CDK application passes both
+`lambda_path="lambdas"` and `layers_path="layers"` to `LambdaApi`, so the
+published Layer directory is discovered and attached to each function.
 
 The POST function demonstrates named configuration with Python 3.12, 1024 MB,
 15 seconds, `STAGE` and `TABLE_NAME`, the mutable `api-role`, and the function
