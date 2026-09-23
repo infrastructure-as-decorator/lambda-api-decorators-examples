@@ -3,6 +3,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -103,6 +104,7 @@ def decorator_signature(node):
 def synthesized(monkeypatch):
     if not DOCKER_AVAILABLE:
         pytest.skip("Docker is unavailable for CDK PythonFunction bundling")
+    monkeypatch.syspath_prepend(str(ROOT))
     monkeypatch.chdir(ROOT)
     from rest_api_dynamodb.rest_api_dynamodb_stack import RestApiDynamodbStack
 
