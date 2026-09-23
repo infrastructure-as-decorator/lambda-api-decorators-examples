@@ -43,5 +43,11 @@ class RestApiDynamodbStack(Stack):
             dynamodb_table_registry={"orders": table},
         )
 
-        api = LambdaApi(self, "Api", lambda_path="lambdas", config=config)
+        api = LambdaApi(
+            self,
+            "Api",
+            lambda_path="lambdas",
+            layers_path="layers",
+            config=config,
+        )
         CfnOutput(self, "ApiUrl", value=api.api.url)
