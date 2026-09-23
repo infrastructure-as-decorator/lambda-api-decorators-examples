@@ -2,6 +2,7 @@ from aws_cdk import CfnOutput, RemovalPolicy, Stack
 from aws_cdk import aws_dynamodb as dynamodb
 from aws_cdk import aws_iam as iam
 from aws_cdk import aws_lambda as lambda_
+from aws_cdk import aws_s3 as s3
 from constructs import Construct
 from lambda_api_decorators_cdk import LambdaApi, LambdaApiConfig
 
@@ -21,6 +22,12 @@ class RestApiDynamodbStack(Stack):
             removal_policy=RemovalPolicy.DESTROY,
         )
 
+        audit_bucket = s3.Bucket(
+            self,
+            "OrdersAudit",
+            removal_policy=RemovalPolicy.DESTROY,
+        )
+
         api_role = iam.Role(
             self,
             "ApiRole",
@@ -31,6 +38,7 @@ class RestApiDynamodbStack(Stack):
                 )
             ],
         )
+        audit_bucket.grant_read(api_role)
 
         config = LambdaApiConfig(
             default_runtime="python3.14",
