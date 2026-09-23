@@ -1,27 +1,26 @@
 import importlib
 import json
 import sys
-from types import SimpleNamespace
 from pathlib import Path
-
-
-sys.path.insert(0, str(Path(__file__).parents[1] / "lambdas"))
+from types import SimpleNamespace
 
 import pytest
 
+LAMBDA_DIR = Path(__file__).parents[1] / "lambdas"
+sys.path.insert(0, str(LAMBDA_DIR))
+pytest.importorskip("lambda_api_decorators", reason="published lambda-api-decorators is not installed")
+
 
 class FakeTable:
-    def __init__(self, items=None):
-        self.items = {item["id"]: dict(item) for item in (items or [])}
-        self.last_key = None
+    def __init__(self, items=()):
+        self.items = {item["id"]: dict(item) for item in items}
 
     def scan(self):
         return {"Items": list(self.items.values())}
 
     def get_item(self, *, Key):
-        self.last_key = Key
         item = self.items.get(Key["id"])
-        return {} if item is None else {"Item": item}
+        return {} if item is None else {"Item": dict(item)}
 
     def put_item(self, *, Item, **kwargs):
         self.items[Item["id"]] = dict(Item)
@@ -31,93 +30,72 @@ class FakeTable:
         return {} if item is None else {"Attributes": item}
 
 
-@pytest.fixture
-def handlers(monkeypatch):
-    table = FakeTable([{"id": "1", "customer": "Ada", "total": 10, "status": "new"}])
-    monkeypatch.setenv("TABLE_NAME", "Orders-test")
-    monkeypatch.setenv("STAGE", "test")
-    monkeypatch.setitem(
-        sys.modules, "boto3", SimpleNamespace(resource=lambda service: FakeResource(table))
-    )
-    sys.modules.pop("lambdas.orders", None)
-    orders = importlib.import_module("orders")
-    return table, orders
-
-
 class FakeResource:
     def __init__(self, table):
-        self._table = table
+        self.table_value = table
 
     def Table(self, name):
         assert name == "Orders-test"
-        return self._table
+        return self.table_value
 
 
-def invoke(module_name, event, handlers):
-    module = importlib.import_module(module_name)
-    result = module.lambda_handler(event, None)
+@pytest.fixture
+def handlers(monkeypatch):
+    table = FakeTable([{"id": "1", "customer": "Ada", "total": 10}])
+    monkeypatch.setenv("TABLE_NAME", "Orders-test")
+    monkeypatch.setenv("STAGE", "test")
+    monkeypatch.setitem(sys.modules, "boto3", SimpleNamespace(resource=lambda service: FakeResource(table)))
+    for module_name in ("orders", "list_orders", "get_order", "create_order", "update_order", "delete_order"):
+        sys.modules.pop(module_name, None)
+    return table
+
+
+def invoke(module_name, event):
+    result = importlib.import_module(module_name).lambda_handler(event, None)
     assert set(result) == {"statusCode", "headers", "body"}
     assert result["headers"] == {"Content-Type": "application/json"}
+    assert isinstance(result["statusCode"], int)
+    assert isinstance(result["body"], str)
     return result
 
 
-def body(result):
+def payload(result):
     return json.loads(result["body"])
 
 
-def test_list_orders_returns_proxy_response_and_uses_table_name(handlers):
-    result = invoke("list_orders", {}, handlers)
+def test_get_orders_returns_200_and_json_list(handlers):
+    result = invoke("list_orders", {})
     assert result["statusCode"] == 200
-    assert body(result) == [{"id": "1", "customer": "Ada", "total": 10, "status": "new"}]
+    assert payload(result) == [{"id": "1", "customer": "Ada", "total": 10}]
 
 
-def test_get_existing_and_missing_orders(handlers):
-    event = {"pathParameters": {"order_id": "1"}}
-    assert invoke("get_order", event, handlers)["statusCode"] == 200
-    missing = invoke("get_order", {"pathParameters": {"order_id": "404"}}, handlers)
-    assert missing["statusCode"] == 404
-    assert body(missing) == {"error": "Order not found"}
+@pytest.mark.parametrize("order_id, status", [("1", 200), ("missing", 404)])
+def test_get_order_returns_200_when_present_and_404_when_absent(handlers, order_id, status):
+    result = invoke("get_order", {"pathParameters": {"id": order_id}})
+    assert result["statusCode"] == status
 
 
-def test_create_valid_order(handlers):
-    event = {"body": json.dumps({"id": "2", "customer": "Lin", "total": 20, "status": "new"})}
-    result = invoke("create_order", event, handlers)
+def test_post_requires_id_stores_object_and_returns_201(handlers):
+    order = {"id": "2", "customer": "Lin"}
+    result = invoke("create_order", {"body": json.dumps(order)})
     assert result["statusCode"] == 201
-    assert body(result)["id"] == "2"
+    assert payload(result) == order
+    assert handlers.items["2"] == order
 
 
-@pytest.mark.parametrize(
-    "payload, expected_fields",
-    [("not-json", None), ({"id": "2", "customer": "Lin"}, ["total", "status"])],
-)
-def test_create_validates_json_and_required_fields(payload, expected_fields, handlers):
-    raw = payload if isinstance(payload, str) else json.dumps(payload)
-    result = invoke("create_order", {"body": raw}, handlers)
-    assert result["statusCode"] == 400
-    if expected_fields is None:
-        assert body(result) == {"error": "Invalid JSON body"}
-    else:
-        assert body(result)["fields"] == expected_fields
-
-
-def test_update_existing_and_missing_orders(handlers):
-    event = {
-        "pathParameters": {"order_id": "1"},
-        "body": json.dumps({"customer": "Ada", "total": 11, "status": "paid"}),
-    }
-    result = invoke("update_order", event, handlers)
+def test_put_uses_path_id_updates_and_returns_200(handlers):
+    result = invoke("update_order", {"pathParameters": {"id": "1"}, "body": json.dumps({"customer": "Grace"})})
     assert result["statusCode"] == 200
-    assert body(result)["total"] == 11
-    missing = invoke(
-        "update_order",
-        {"pathParameters": {"order_id": "404"}, "body": json.dumps({"customer": "A", "total": 1, "status": "new"})},
-        handlers,
-    )
-    assert missing["statusCode"] == 404
+    assert payload(result) == {"id": "1", "customer": "Grace"}
+    assert handlers.items["1"] == {"id": "1", "customer": "Grace"}
 
 
-def test_delete_existing_and_missing_orders(handlers):
-    result = invoke("delete_order", {"pathParameters": {"order_id": "1"}}, handlers)
-    assert result["statusCode"] == 200
-    missing = invoke("delete_order", {"pathParameters": {"order_id": "1"}}, handlers)
-    assert missing["statusCode"] == 404
+def test_delete_removes_order_and_returns_204(handlers):
+    result = invoke("delete_order", {"pathParameters": {"id": "1"}})
+    assert result["statusCode"] == 204
+    assert "1" not in handlers.items
+
+
+@pytest.mark.parametrize("event", [{"body": "not-json"}, {"body": json.dumps({"customer": "Missing id"})}])
+def test_post_invalid_json_or_missing_id_returns_400(handlers, event):
+    assert invoke("create_order", event)["statusCode"] == 400

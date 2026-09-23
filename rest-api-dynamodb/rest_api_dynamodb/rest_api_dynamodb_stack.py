@@ -33,12 +33,15 @@ class RestApiDynamodbStack(Stack):
         )
 
         config = LambdaApiConfig(
-            runtime=lambda_.Runtime.PYTHON_3_14,
-            dynamodb_tables={"orders": table},
+            default_runtime="python3.14",
+            common_environment={"SERVICE": "orders"},
+            environment_registry={
+                "STAGE": {"STAGE": "dev"},
+                "TABLE_NAME": {"TABLE_NAME": table.table_name},
+            },
+            role_registry={"api-role": api_role},
+            dynamodb_table_registry={"orders": table},
         )
-        config.add_custom_environment("STAGE", "dev")
-        config.add_custom_environment("TABLE_NAME", table.table_name)
-        config.add_custom_role("api-role", api_role)
 
         api = LambdaApi(self, "Api", lambda_path="lambdas", config=config)
         CfnOutput(self, "ApiUrl", value=api.api.url)

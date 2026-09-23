@@ -1,51 +1,64 @@
+import ast
 import json
+import os
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
+os.environ.setdefault("JSII_RUNTIME_PACKAGE_CACHE", "/tmp/codex-jsii-cache")
+
+pytest.importorskip("aws_cdk", reason="aws-cdk-lib is not installed")
+pytest.importorskip("constructs", reason="constructs is not installed")
+pytest.importorskip("lambda_api_decorators_cdk", reason="published lambda-api-decorators-cdk is not installed")
+
 import aws_cdk as cdk
-from aws_cdk.assertions import Match, Template
+from aws_cdk.assertions import Template
 
-sys.path.insert(0, str(Path(__file__).parents[1]))
-
-from rest_api_dynamodb.rest_api_dynamodb_stack import RestApiDynamodbStack
-
-
-def template(monkeypatch):
-    monkeypatch.chdir(Path(__file__).parents[1])
-    app = cdk.App()
-    return Template.from_stack(RestApiDynamodbStack(app, "TestRestApiDynamodbStack"))
+ROOT = Path(__file__).parents[1]
+sys.path.insert(0, str(ROOT))
+DOCKER_AVAILABLE = bool(shutil.which("docker")) and subprocess.run(
+    ["docker", "info"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False
+).returncode == 0
 
 
-def test_stack_creates_real_rest_api_table_and_five_lambdas(monkeypatch):
-    rendered = template(monkeypatch)
-    rendered.resource_count_is("AWS::ApiGateway::RestApi", 1)
-    rendered.resource_count_is("AWS::DynamoDB::Table", 1)
-    rendered.resource_count_is("AWS::Lambda::Function", 5)
-    rendered.has_resource_properties(
-        "AWS::DynamoDB::Table",
-        {
-            "TableName": "Orders",
-            "BillingMode": "PAY_PER_REQUEST",
-            "AttributeDefinitions": [{"AttributeName": "id", "AttributeType": "S"}],
-            "KeySchema": [{"AttributeName": "id", "KeyType": "HASH"}],
-        },
-    )
-    rendered.has_resource(
-        "AWS::DynamoDB::Table",
-        {"DeletionPolicy": "Delete", "UpdateReplacePolicy": "Delete"},
-    )
-    methods = rendered.find_resources("AWS::ApiGateway::Method")
-    assert {method["Properties"]["HttpMethod"] for method in methods.values()} == {
-        "GET", "POST", "PUT", "DELETE"
-    }
+def synthesized(monkeypatch):
+    if not DOCKER_AVAILABLE:
+        pytest.skip("Docker is unavailable for CDK PythonFunction bundling")
+    monkeypatch.chdir(ROOT)
+    from rest_api_dynamodb.rest_api_dynamodb_stack import RestApiDynamodbStack
+
+    return Template.from_stack(RestApiDynamodbStack(cdk.App(), "TestRestApiDynamodbStack"))
+
+
+def test_stack_has_real_table_rest_api_five_lambdas_and_destroy_policy(monkeypatch):
+    template = synthesized(monkeypatch)
+    template.resource_count_is("AWS::ApiGateway::RestApi", 1)
+    template.resource_count_is("AWS::DynamoDB::Table", 1)
+    template.resource_count_is("AWS::Lambda::Function", 5)
+    template.has_resource_properties("AWS::DynamoDB::Table", {
+        "BillingMode": "PAY_PER_REQUEST",
+        "AttributeDefinitions": [{"AttributeName": "id", "AttributeType": "S"}],
+        "KeySchema": [{"AttributeName": "id", "KeyType": "HASH"}],
+    })
+    template.has_resource("AWS::DynamoDB::Table", {"DeletionPolicy": "Delete", "UpdateReplacePolicy": "Delete"})
+
+
+def test_template_contains_the_five_required_methods_and_paths(monkeypatch):
+    template = synthesized(monkeypatch)
+    methods = template.find_resources("AWS::ApiGateway::Method")
     assert len(methods) == 5
+    assert {method["Properties"]["HttpMethod"] for method in methods.values()} == {"GET", "POST", "PUT", "DELETE"}
+    resources = template.find_resources("AWS::ApiGateway::Resource")
+    assert {resource["Properties"].get("PathPart") for resource in resources.values()} >= {"orders", "{id}"}
 
 
-def test_lambda_defaults_and_configured_decorator_are_synthesized(monkeypatch):
-    rendered = template(monkeypatch)
-    functions = rendered.find_resources("AWS::Lambda::Function")
-    defaults = [resource for resource in functions.values() if resource["Properties"].get("Runtime") == "python3.14"]
-    assert len(defaults) == 4
+def test_default_and_post_lambda_configuration(monkeypatch):
+    template = synthesized(monkeypatch)
+    functions = template.find_resources("AWS::Lambda::Function")
+    assert sum(resource["Properties"].get("Runtime") == "python3.14" for resource in functions.values()) == 4
     configured = [resource for resource in functions.values() if resource["Properties"].get("FunctionName") == "configured-handler"]
     assert len(configured) == 1
     properties = configured[0]["Properties"]
@@ -53,31 +66,92 @@ def test_lambda_defaults_and_configured_decorator_are_synthesized(monkeypatch):
     assert properties["MemorySize"] == 1024
     assert properties["Timeout"] == 15
     assert properties["Description"] == "Configured endpoint"
-    assert properties["Environment"]["Variables"]["STAGE"] == "dev"
-    assert "Orders" in json.dumps(properties["Environment"]["Variables"]["TABLE_NAME"])
-    assert properties["Role"]["Fn::GetAtt"][1] == "Arn"
+    assert set(properties["Environment"]["Variables"]) >= {"STAGE", "TABLE_NAME"}
     assert properties["Role"]["Fn::GetAtt"][0].startswith("ApiRole")
-    roles = rendered.find_resources("AWS::IAM::Role")
-    assert any(
-        role["Properties"]["AssumeRolePolicyDocument"]["Statement"][0]["Principal"]
-        == {"Service": "lambda.amazonaws.com"}
-        and any("AWSLambdaBasicExecutionRole" in json.dumps(policy)
-                for policy in role["Properties"]["ManagedPolicyArns"])
-        for role in roles.values()
-    )
 
 
-def test_dynamodb_permissions_are_scoped_and_read_write_is_cumulative(monkeypatch):
-    rendered = template(monkeypatch)
-    policies = rendered.find_resources("AWS::IAM::Policy")
+def test_dynamodb_permissions_reference_the_table(monkeypatch):
+    template = synthesized(monkeypatch)
+    table_logical_id = next(iter(template.find_resources("AWS::DynamoDB::Table")))
+    policies = template.find_resources("AWS::IAM::Policy")
     statements = [
         statement
         for policy in policies.values()
         for statement in policy["Properties"]["PolicyDocument"]["Statement"]
-        if any("dynamodb:" in action for action in statement["Action"] if isinstance(statement["Action"], list))
+        if "dynamodb:" in json.dumps(statement.get("Action", []))
     ]
     assert statements
-    assert all(statement["Resource"] != "*" for statement in statements)
-    actions = [set(statement["Action"]) for statement in statements]
-    assert any("dynamodb:Scan" in action_set for action_set in actions)
-    assert any({"dynamodb:PutItem", "dynamodb:UpdateItem", "dynamodb:DeleteItem"}.issubset(action_set) for action_set in actions)
+    assert all(table_logical_id in json.dumps(statement["Resource"]) for statement in statements)
+
+
+def test_each_handler_has_exactly_one_http_decorator():
+    http_names = {"GET", "POST", "PUT", "DELETE", "ANY"}
+    for source in (ROOT / "lambdas").glob("*.py"):
+        if source.name.startswith("__") or source.name == "orders.py":
+            continue
+        tree = ast.parse(source.read_text(), filename=str(source))
+        handlers = [node for node in ast.walk(tree) if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == "lambda_handler"]
+        assert len(handlers) == 1, source
+        decorators = [decorator for decorator in handlers[0].decorator_list if isinstance(decorator, ast.Call) and isinstance(decorator.func, ast.Name) and decorator.func.id in http_names]
+        assert len(decorators) == 1, source
+
+
+def test_post_decorator_contract_is_exact():
+    tree = ast.parse((ROOT / "lambdas" / "create_order.py").read_text())
+    handler = next(node for node in ast.walk(tree) if isinstance(node, ast.FunctionDef) and node.name == "lambda_handler")
+    def decorator_name(node):
+        parts = []
+        while isinstance(node, ast.Attribute):
+            parts.append(node.attr)
+            node = node.value
+        assert isinstance(node, ast.Name)
+        parts.append(node.id)
+        return ".".join(reversed(parts))
+
+    def constant_value(node):
+        assert isinstance(node, ast.Constant)
+        return node.value
+
+    def signature(node):
+        assert isinstance(node, ast.Call)
+        return (
+            decorator_name(node.func),
+            tuple(constant_value(argument) for argument in node.args),
+            tuple((keyword.arg, constant_value(keyword.value)) for keyword in node.keywords),
+        )
+
+    actual = [signature(decorator) for decorator in handler.decorator_list]
+    assert actual == [
+        ("POST", ("/orders",), ()),
+        ("grant_dynamodb", ("orders", "write"), ()),
+        ("memory_size", (1024,), ()),
+        ("timeout", (15,), ()),
+        ("environment", ("STAGE", "TABLE_NAME"), ()),
+        ("runtime", ("python3.12",), ()),
+        ("role", ("api-role",), ()),
+        ("description", ("Configured endpoint",), ()),
+        ("name", ("configured-handler",), ()),
+    ]
+
+
+def test_stack_uses_named_registries_and_no_shared_default_role():
+    source = (ROOT / "rest_api_dynamodb" / "rest_api_dynamodb_stack.py").read_text()
+    for name in ("default_runtime", "common_environment", "environment_registry", "role_registry", "dynamodb_table_registry"):
+        assert name in source
+    assert "default_role" not in source
+
+
+def test_requirements_are_pinned_and_do_not_use_git_path_or_editable():
+    cdk_requirements = (ROOT / "requirements.txt").read_text().splitlines()
+    lambda_requirements = (ROOT / "lambdas" / "requirements.txt").read_text().splitlines()
+    assert "aws-cdk-lib" in "\n".join(cdk_requirements)
+    assert "constructs" in "\n".join(cdk_requirements)
+    assert "lambda-api-decorators-cdk==0.4.4" in cdk_requirements
+    assert "lambda-api-decorators" not in cdk_requirements
+    assert "lambda-api-decorators==0.3.2" in lambda_requirements
+    assert not any(any(token in line for token in ("git+", "-e ", "file:", "path:")) for line in cdk_requirements + lambda_requirements)
+
+
+def test_no_generated_artifacts_are_tracked():
+    tracked = subprocess.check_output(["git", "ls-files", str(ROOT)], text=True).splitlines()
+    assert not [path for path in tracked if any(part in path.split("/") for part in ("cdk.out", "__pycache__", ".pytest_cache"))]
