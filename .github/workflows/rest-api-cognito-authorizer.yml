@@ -1,0 +1,39 @@
+name: rest-api-cognito-authorizer
+
+on:
+  push:
+    paths:
+      - "rest-api-cognito-authorizer/**"
+      - ".github/workflows/rest-api-cognito-authorizer.yml"
+  pull_request:
+    paths:
+      - "rest-api-cognito-authorizer/**"
+      - ".github/workflows/rest-api-cognito-authorizer.yml"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install AWS CDK CLI
+        run: npm install --global aws-cdk
+      - name: Verify Docker
+        run: docker info
+      - name: Install dependencies
+        working-directory: rest-api-cognito-authorizer
+        run: python -m pip install --upgrade pip && python -m pip install -r requirements-dev.txt
+      - name: Verify published CDK integration version
+        working-directory: rest-api-cognito-authorizer
+        run: python -c "from importlib.metadata import version; assert version('lambda-api-decorators-cdk') == '0.4.5'"
+      - name: Run tests
+        working-directory: rest-api-cognito-authorizer
+        run: pytest -q tests -rs
+      - name: Synthesize CloudFormation
+        working-directory: rest-api-cognito-authorizer
+        run: cdk synth --quiet
