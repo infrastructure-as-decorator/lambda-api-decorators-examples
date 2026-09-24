@@ -119,7 +119,7 @@ The complete `lambdas/auth.py` is:
 ```python
 import json
 
-from lambda_api_decorators import GET, public
+from lambda_api_decorators import CurrentUserError, GET, current_user, public
 
 
 JSON_HEADERS = {"Content-Type": "application/json"}
@@ -137,21 +137,18 @@ def health(event, context):
 
 @GET("/me")
 def me(event, context):
-    claims = (
-        event.get("requestContext", {})
-        .get("authorizer", {})
-        .get("claims")
-    )
-    if not isinstance(claims, dict) or not claims.get("sub"):
+    try:
+        user = current_user(event)
+    except CurrentUserError:
         return {
             "statusCode": 401,
             "headers": JSON_HEADERS,
             "body": json.dumps({"message": "Unauthorized"}),
         }
 
-    body = {"sub": claims["sub"]}
-    if claims.get("cognito:username"):
-        body["username"] = claims["cognito:username"]
+    body = {"sub": user.subject}
+    if user.username is not None:
+        body["username"] = user.username
     return {
         "statusCode": 200,
         "headers": JSON_HEADERS,
@@ -168,15 +165,23 @@ undecorated route inherit that authorizer, so `/me` does not repeat
 makes only `/health` use `AuthorizationType: NONE`.
 
 API Gateway validates `/me` before invoking the Lambda. The handler reads REST
-API claims from `event["requestContext"]["authorizer"]["claims"]` and returns
-only `sub` and the optional `cognito:username`. Its defensive `401` is for
-direct invocation or malformed events. No handler calls AWS services.
+API claims through `current_user(event)`, which normalizes the already-validated
+identity. The helper supports REST Cognito claims and HTTP API v2 JWT claims;
+this example uses the REST shape. `CurrentUser.subject` comes from `sub`, and
+`CurrentUser.username` prefers `cognito:username`, then `username`, and may be
+`None`. Its defensive `401` is for direct invocation or malformed events.
+`CurrentUserError` is not exposed to the client. The handler returns only the
+subject and optional normalized username, never the complete claims mapping or
+tokens. `current_user` does not authenticate or verify tokens, and no handler
+calls AWS services.
 
 ## Tests
 
-The handler tests cover proxy shape, status codes, JSON bodies, REST claims,
-missing claims, sensitive-data exclusion, exact decorators, one route per
-function, and absence of AWS calls. The stack tests cover Cognito resources,
+The handler tests cover proxy shape, status codes, JSON bodies, delegation to
+`current_user`, `CurrentUser.subject`, normalized `CurrentUser.username`,
+`CurrentUserError` to `401`, REST claims, missing claims, sensitive-data
+exclusion, exact decorators, one route per function, and absence of AWS calls.
+The stack tests cover Cognito resources,
 deletion policies, secret-free client configuration, REST authorization for
 both paths, two Python 3.14 entrypoints, outputs, registry inheritance, and
 consolidated diagnostics.
