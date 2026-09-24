@@ -2,13 +2,16 @@ name: rest-api-cognito-authorizer
 
 on:
   push:
+    branches: [main]
     paths:
       - "rest-api-cognito-authorizer/**"
       - ".github/workflows/rest-api-cognito-authorizer.yml"
   pull_request:
+    branches: [main]
     paths:
       - "rest-api-cognito-authorizer/**"
       - ".github/workflows/rest-api-cognito-authorizer.yml"
+  workflow_dispatch:
 
 jobs:
   test:
