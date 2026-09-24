@@ -22,6 +22,9 @@ its own dependencies and setup instructions.
 - [`rest-api-dynamodb`](rest-api-dynamodb/) — deploy a real API Gateway REST
   CRUD API with five independent handlers backed by a real DynamoDB `Orders`
   table. The example includes tests, synthesis, deployment, and cleanup steps.
+- [`rest-api-cognito-authorizer`](rest-api-cognito-authorizer/) — deploy a REST
+  API with a Cognito authorizer, a protected `/me` route, and a public
+  `/health` route.
 
 Each example is independent. Install its requirements from that example's
 directory; no local package paths or editable installs are required.
