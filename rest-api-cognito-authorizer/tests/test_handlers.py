@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from lambda_api_decorators import CurrentUser, CurrentUserError
 
 
 ROOT = Path(__file__).parents[1]
@@ -125,6 +126,82 @@ def test_me_accepts_missing_cognito_username_when_sub_exists(monkeypatch):
     assert payload(result) == {"sub": "user-id"}
 
 
+def test_me_delegates_identity_extraction_to_current_user(monkeypatch):
+    module = handler_module(monkeypatch)
+    event = object()
+    controlled_user = CurrentUser(
+        subject="controlled-subject",
+        username="controlled-username",
+        claims={"sub": "not-read-directly"},
+    )
+    calls = []
+
+    def fake_current_user(received_event):
+        calls.append(received_event)
+        return controlled_user
+
+    monkeypatch.setattr(module, "current_user", fake_current_user)
+
+    result = invoke(module, "me", event)
+
+    assert calls == [event]
+    assert result["statusCode"] == 200
+    assert payload(result) == {
+        "sub": "controlled-subject",
+        "username": "controlled-username",
+    }
+
+
+def test_me_translates_current_user_error_to_defensive_401(monkeypatch):
+    module = handler_module(monkeypatch)
+    event = object()
+
+    def fake_current_user(received_event):
+        assert received_event is event
+        raise CurrentUserError("internal claim details")
+
+    monkeypatch.setattr(module, "current_user", fake_current_user)
+
+    result = invoke(module, "me", event)
+
+    assert result["statusCode"] == 401
+    assert payload(result) == {"message": "Unauthorized"}
+    assert "internal claim details" not in result["body"]
+
+
+def test_me_uses_normalized_username_not_event_claims(monkeypatch):
+    module = handler_module(monkeypatch)
+    event = {"sentinel": "event-without-claims"}
+    controlled_user = CurrentUser(
+        subject="subject-from-helper",
+        username="username-from-helper",
+        claims={"sub": "subject-from-helper"},
+    )
+    monkeypatch.setattr(module, "current_user", lambda received_event: controlled_user)
+
+    result = invoke(module, "me", event)
+
+    assert payload(result) == {
+        "sub": "subject-from-helper",
+        "username": "username-from-helper",
+    }
+
+
+def test_me_omits_username_when_current_user_has_none(monkeypatch):
+    module = handler_module(monkeypatch)
+    controlled_user = CurrentUser(
+        subject="subject-only",
+        username=None,
+        claims={"sub": "subject-only", "username": "ignored"},
+    )
+    monkeypatch.setattr(module, "current_user", lambda event: controlled_user)
+
+    result = invoke(module, "me", {"sentinel": "no-claims"})
+
+    assert result["statusCode"] == 200
+    assert payload(result) == {"sub": "subject-only"}
+
+
 def test_me_returns_defensive_401_when_claims_are_missing(monkeypatch):
     module = handler_module(monkeypatch)
     result = invoke(module, "me", {})
@@ -165,3 +242,13 @@ def test_handlers_do_not_import_or_call_aws_services():
         for node in ast.walk(tree)
     )
 
+
+def test_auth_imports_public_current_user_api():
+    imported = {
+        alias.name
+        for node in parse_source().body
+        if isinstance(node, ast.ImportFrom)
+        and node.module == "lambda_api_decorators"
+        for alias in node.names
+    }
+    assert {"current_user", "CurrentUserError"} <= imported
