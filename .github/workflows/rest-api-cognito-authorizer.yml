@@ -33,7 +33,7 @@ jobs:
         run: python -m pip install --upgrade pip && python -m pip install -r requirements-dev.txt
       - name: Verify published CDK integration version
         working-directory: rest-api-cognito-authorizer
-        run: python -c "from importlib.metadata import version; assert version('lambda-api-decorators-cdk') == '0.4.5'"
+        run: python -c "from importlib.metadata import version; assert version('lambda-api-decorators-cdk') == '0.4.7'"
       - name: Run tests
         working-directory: rest-api-cognito-authorizer
         run: pytest -q tests -rs
