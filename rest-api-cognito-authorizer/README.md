@@ -47,7 +47,7 @@ rest-api-cognito-authorizer/
 The stack creates one User Pool, one secret-free client, one Cognito REST
 authorizer, one REST API, and two Lambda functions:
 
-The CDK integration dependency is pinned to `lambda-api-decorators-cdk==0.4.5`.
+The CDK integration dependency is pinned to `lambda-api-decorators-cdk==0.4.7`.
 
 ```python
 from aws_cdk import CfnOutput, RemovalPolicy, Stack

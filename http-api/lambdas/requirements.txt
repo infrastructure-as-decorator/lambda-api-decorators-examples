@@ -1,1 +1,1 @@
-lambda-api-decorators
+lambda-api-decorators==0.3.4

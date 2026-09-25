@@ -49,8 +49,8 @@ jobs:
           import lambda_api_decorators
           import lambda_api_decorators_cdk
 
-          assert version("lambda-api-decorators") == "0.3.2"
-          assert version("lambda-api-decorators-cdk") == "0.4.4"
+          assert version("lambda-api-decorators") == "0.3.4"
+          assert version("lambda-api-decorators-cdk") == "0.4.7"
           print("published package versions verified")
           PY
 
