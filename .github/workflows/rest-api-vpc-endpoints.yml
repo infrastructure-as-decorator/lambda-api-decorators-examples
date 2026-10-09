@@ -59,7 +59,7 @@ jobs:
           ! grep -Eq '[0-9]+ skipped' "$RUNNER_TEMP/pytest-output.txt"
 
       - name: Compile Python sources
-        run: python -m compileall -q lambdas tests
+        run: python -m compileall -q lambdas layers tests
 
       - name: Synthesize the CDK app
         run: cdk synth --quiet

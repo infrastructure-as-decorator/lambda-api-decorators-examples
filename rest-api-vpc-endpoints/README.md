@@ -21,10 +21,16 @@ rest-api-vpc-endpoints/
 ├── README.md
 ├── lambdas/
 │   ├── __init__.py
-│   ├── common.py
 │   ├── items.py
 │   ├── objects.py
 │   └── requirements.txt
+├── layers/
+│   └── application/
+│       ├── python/
+│       │   ├── common.py
+│       │   ├── repository.py
+│       │   └── service.py
+│       └── requirements.txt
 ├── rest_api_vpc_endpoints/
 │   ├── __init__.py
 │   └── rest_api_vpc_endpoints_stack.py
@@ -44,9 +50,13 @@ rest-api-vpc-endpoints/
 
 Each Python function declares exactly one route. The two modules are grouped only to keep the example small; CDK still creates one Lambda and one execution role per handler.
 
+The `application` Lambda Layer contains the three application layers used by the handlers: `common.py` contains HTTP helpers, `service.py` contains validation and application behavior, and `repository.py` contains AWS SDK access. The handlers remain thin route adapters.
+
 ## Registries, grants, and IAM
 
-The stack registers the actual CDK VPC, table, and bucket objects with `LambdaApiConfig`. It also registers environment mappings for the table and bucket names. The VPC is applied with `vpc` and `vpc_subnets=SubnetSelection(subnet_type=PRIVATE_ISOLATED)`, while the `vpc_registry` demonstrates the named resource registry supported by the released CDK package.
+The stack reads the CDK context value `stage`, defaulting to `develop`. The DynamoDB table is physically named `items-{stage}` (for example, `items-develop`). Lambdas receive only `STAGE` for this lookup; they do not receive a `TABLE_NAME` setting. The repository reads `STAGE` and derives the table name before creating the boto3 DynamoDB resource. The S3 bucket name remains supplied through its registered environment mapping.
+
+The stack registers the actual CDK VPC, table, and bucket objects with `LambdaApiConfig`. It also registers environment mappings for the stage and bucket. The VPC is applied with `vpc` and `vpc_subnets=SubnetSelection(subnet_type=PRIVATE_ISOLATED)`, while the `vpc_registry` demonstrates the named resource registry supported by the released CDK package.
 
 Registries are lookup mechanisms, not permissions. `@grant_dynamodb("items", "read")`, `@grant_dynamodb("items", "write")`, `@grant_s3("objects", "read")`, and `@grant_s3("objects", "write")` attach the required policies to the corresponding function. `write` is the library's native cumulative read/write grant. No shared execution role is configured, so the CDK integration creates isolated roles and prevents permissions from accumulating across handlers.
 
@@ -92,7 +102,7 @@ Docker is required because `PythonFunction` bundles each Lambda. Run:
 
 ```bash
 pytest -q
-python -m compileall -q lambdas tests
+python -m compileall -q lambdas layers tests
 cdk synth --quiet
 ```
 
@@ -106,10 +116,16 @@ Bootstrap the target account and Region once if needed:
 cdk bootstrap
 ```
 
-Deploy without requiring application code to know resource names:
+Deploy the default `develop` stage:
 
 ```bash
-cdk deploy
+cdk deploy -c stage=develop
+```
+
+To deploy a separate environment, use another stage value such as `qa` or `prod`. The table name changes accordingly:
+
+```bash
+cdk deploy -c stage=qa
 ```
 
 Copy the `ApiUrl` output. The following examples use `API_URL` as a shell variable and store plain text objects. The `{key}` route is intended for a simple key such as `greeting.txt`.
@@ -158,4 +174,4 @@ curl -i "%API_URL%/objects/greeting.txt"
 cdk destroy
 ```
 
-This stack is intentionally disposable. `cdk destroy` permanently deletes the DynamoDB table, the S3 bucket, and all objects in that bucket because both resources use `RemovalPolicy.DESTROY` and the bucket enables `auto_delete_objects`. Back up anything important before running the command.
+This stack is intentionally disposable. `cdk destroy -c stage=develop` permanently deletes the stage-specific DynamoDB table, the S3 bucket, and all objects in that bucket because both resources use `RemovalPolicy.DESTROY` and the bucket enables `auto_delete_objects`. Back up anything important before running the command.
