@@ -80,9 +80,12 @@ def test_network_has_one_vpc_no_nat_and_two_gateway_endpoints(monkeypatch):
     assert resources(template, "AWS::EC2::NatGateway") == {}
     template.resource_count_is("AWS::EC2::VPCEndpoint", 2)
     endpoints = resources(template, "AWS::EC2::VPCEndpoint").values()
-    services = {endpoint["Properties"]["ServiceName"] for endpoint in endpoints}
-    assert any("dynamodb" in json.dumps(service).lower() for service in services)
-    assert any("s3" in json.dumps(service).lower() for service in services)
+    services = [
+        json.dumps(endpoint["Properties"]["ServiceName"], sort_keys=True).lower()
+        for endpoint in endpoints
+    ]
+    assert any("dynamodb" in service for service in services)
+    assert any('"s3"' in service or ".s3" in service for service in services)
     for endpoint in endpoints:
         assert endpoint["Properties"]["VpcEndpointType"] == "Gateway"
         assert endpoint["Properties"].get("RouteTableIds")
