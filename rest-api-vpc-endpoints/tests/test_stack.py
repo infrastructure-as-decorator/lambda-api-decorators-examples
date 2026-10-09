@@ -79,6 +79,16 @@ def test_source_uses_published_registries_and_current_vpc_selection_contract():
     assert 'layers_path="layers"' in source
 
 
+def test_application_layer_source_is_flat_for_python_layer_bundling():
+    layer_root = ROOT / "layers" / "application"
+    assert not (layer_root / "python").exists()
+    assert {path.name for path in layer_root.glob("*.py")} == {
+        "common.py",
+        "repository.py",
+        "service.py",
+    }
+
+
 def test_network_has_one_vpc_no_nat_and_two_gateway_endpoints(monkeypatch):
     template = stack_template(monkeypatch)
     template.resource_count_is("AWS::EC2::VPC", 1)

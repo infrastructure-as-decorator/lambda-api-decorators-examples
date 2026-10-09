@@ -37,9 +37,13 @@ class RestApiVpcEndpointsStack(Stack):
             subnets=[isolated_subnets],
         )
 
+        stage = self.node.try_get_context("stage") or "develop"
+        table_name = f"items-{stage}"
+
         table = dynamodb.Table(
             self,
             "Items",
+            table_name=table_name,
             partition_key=dynamodb.Attribute(
                 name="id", type=dynamodb.AttributeType.STRING
             ),
@@ -59,7 +63,7 @@ class RestApiVpcEndpointsStack(Stack):
             vpc_subnets=isolated_subnets,
             vpc_registry={"private": vpc},
             environment_registry={
-                "items": {"TABLE_NAME": table.table_name},
+                "stage": {"STAGE": stage},
                 "objects": {"BUCKET_NAME": bucket.bucket_name},
             },
             dynamodb_table_registry={"items": table},
@@ -69,6 +73,7 @@ class RestApiVpcEndpointsStack(Stack):
             self,
             "Api",
             lambda_path="lambdas",
+            layers_path="layers",
             config=config,
         )
 
