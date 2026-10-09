@@ -26,10 +26,9 @@ rest-api-vpc-endpoints/
 │   └── requirements.txt
 ├── layers/
 │   └── application/
-│       ├── python/
-│       │   ├── common.py
-│       │   ├── repository.py
-│       │   └── service.py
+│       ├── common.py
+│       ├── repository.py
+│       ├── service.py
 │       └── requirements.txt
 ├── rest_api_vpc_endpoints/
 │   ├── __init__.py

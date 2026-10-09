@@ -9,7 +9,7 @@ import pytest
 
 
 ROOT = Path(__file__).parents[1]
-LAYER_PYTHON = ROOT / "layers" / "application" / "python"
+LAYER_PYTHON = ROOT / "layers" / "application"
 
 
 class FakeTable:
@@ -197,6 +197,7 @@ def test_each_handler_has_exactly_one_route_and_uses_the_application_layer():
 
 
 def test_layer_contains_common_repository_and_service():
+    assert not (ROOT / "layers" / "application" / "python").exists()
     assert {path.name for path in LAYER_PYTHON.glob("*.py")} == {
         "common.py",
         "repository.py",
