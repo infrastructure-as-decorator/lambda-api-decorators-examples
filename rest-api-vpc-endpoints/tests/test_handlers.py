@@ -8,6 +8,9 @@ from pathlib import Path
 import pytest
 
 
+ROOT = Path(__file__).parents[1]
+
+
 class FakeTable:
     def __init__(self):
         self.items = {}
@@ -34,9 +37,8 @@ class FakeS3:
         try:
             stored = self.objects[(Bucket, Key)]
         except KeyError:
-            error = SimpleNamespace(response={"Error": {"Code": "NoSuchKey"}})
-            raise error
-        return {"Body": SimpleNamespace(read=lambda: stored["Body"]), **stored}
+            raise FakeClientError("NoSuchKey")
+        return {**stored, "Body": SimpleNamespace(read=lambda: stored["Body"])}
 
 
 class FakeClientError(Exception):
@@ -64,6 +66,8 @@ def handlers(monkeypatch):
 
     monkeypatch.setenv("TABLE_NAME", "items-table")
     monkeypatch.setenv("BUCKET_NAME", "objects-bucket")
+    monkeypatch.syspath_prepend(str(ROOT))
+    monkeypatch.syspath_prepend(str(ROOT / "lambdas"))
     monkeypatch.setitem(
         sys.modules,
         "boto3",
@@ -124,7 +128,7 @@ def test_put_and_get_object_use_s3(handlers):
     _items, objects, _table, s3 = handlers
     result = invoke(
         objects.put_object,
-        {"pathParameters": {"key": "greeting.txt"}, "body": "hello"},
+        {"body": '{"key":"greeting.txt","body":"hello"}'},
     )
     assert result["statusCode"] == 201
     assert body(result) == {"key": "greeting.txt"}
@@ -133,7 +137,7 @@ def test_put_and_get_object_use_s3(handlers):
     assert body(result) == {"key": "greeting.txt", "body": "hello"}
 
 
-@pytest.mark.parametrize("event", [{}, {"body": ""}])
+@pytest.mark.parametrize("event", [{}, {"body": ""}, {"body": "{\"key\":\"x\"}"}])
 def test_put_object_rejects_missing_key_or_body(handlers, event):
     _items, objects, _table, _s3 = handlers
     assert invoke(objects.put_object, event)["statusCode"] == 400

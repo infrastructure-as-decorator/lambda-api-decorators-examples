@@ -150,3 +150,39 @@ def test_grants_are_scoped_to_the_registered_resources(monkeypatch):
     ]
     assert len(application_policies) >= 4
     assert all(table_id in json.dumps(policy) or bucket_id in json.dumps(policy) for policy in application_policies)
+
+
+def test_grants_use_read_or_native_write_actions_per_handler(monkeypatch):
+    template = stack_template(monkeypatch)
+    functions = {
+        resource["Properties"]["Handler"]: resource
+        for resource in resources(template, "AWS::Lambda::Function").values()
+        if resource["Properties"].get("Handler")
+        in {"items.create_item", "items.get_item", "objects.put_object", "objects.get_object"}
+    }
+    policies = resources(template, "AWS::IAM::Policy").values()
+
+    def actions_for(handler):
+        role_ref = functions[handler]["Properties"]["Role"]["Fn::GetAtt"][0]
+        return {
+            action
+            for policy in policies
+            if {"Ref": role_ref} in policy["Properties"]["Roles"]
+            for statement in policy["Properties"]["PolicyDocument"]["Statement"]
+            for action in (statement["Action"] if isinstance(statement["Action"], list) else [statement["Action"]])
+        }
+
+    assert "dynamodb:PutItem" in actions_for("items.create_item")
+    assert "dynamodb:PutItem" not in actions_for("items.get_item")
+    assert "s3:PutObject" in actions_for("objects.put_object")
+    assert "s3:PutObject" not in actions_for("objects.get_object")
+
+
+def test_s3_cleanup_provider_is_not_in_the_application_vpc(monkeypatch):
+    template = stack_template(monkeypatch)
+    cleanup_functions = [
+        resource for resource in resources(template, "AWS::Lambda::Function").values()
+        if resource["Properties"].get("Handler") == "index.handler"
+    ]
+    assert cleanup_functions
+    assert all("VpcConfig" not in function["Properties"] for function in cleanup_functions)
