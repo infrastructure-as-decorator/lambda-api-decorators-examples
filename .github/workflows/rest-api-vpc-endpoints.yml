@@ -1,0 +1,70 @@
+name: REST API VPC endpoints example
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "rest-api-vpc-endpoints/**"
+      - "pytest.ini"
+      - ".github/workflows/rest-api-vpc-endpoints.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "rest-api-vpc-endpoints/**"
+      - "pytest.ini"
+      - ".github/workflows/rest-api-vpc-endpoints.yml"
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: rest-api-vpc-endpoints
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install AWS CDK CLI
+        run: npm install --global aws-cdk
+
+      - name: Confirm Docker is available
+        run: docker info
+
+      - name: Install dependencies from PyPI
+        run: python -m pip install -r requirements-dev.txt
+
+      - name: Verify published package versions
+        run: |
+          python - <<'PY'
+          from importlib.metadata import version
+          assert version("lambda-api-decorators") == "0.3.4"
+          assert version("lambda-api-decorators-cdk") == "0.4.7"
+          print("published package versions verified")
+          PY
+
+      - name: Run tests without skips
+        shell: bash
+        run: |
+          set -o pipefail
+          pytest -q -rs | tee "$RUNNER_TEMP/pytest-output.txt"
+          ! grep -Eq '[0-9]+ skipped' "$RUNNER_TEMP/pytest-output.txt"
+
+      - name: Compile Python sources
+        run: python -m compileall -q lambdas layers tests
+
+      - name: Synthesize the CDK app
+        run: cdk synth --quiet
+
+      - name: Confirm generated artifacts are not committed
+        shell: bash
+        run: |
+          test -z "$(git ls-files -- 'cdk.out/**' '.cdk.staging/**' '**/__pycache__/**' '**/.pytest_cache/**' '**/.venv/**' '*.pyc' '**/*.zip' '**/.dynamodb/**')"
