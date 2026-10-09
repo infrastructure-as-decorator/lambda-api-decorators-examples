@@ -72,6 +72,11 @@ def test_source_uses_published_registries_and_current_vpc_selection_contract():
     assert {"vpc_registry", "dynamodb_table_registry", "s3_bucket_registry", "environment_registry"} <= keywords
     assert "vpc_subnets" in source
     assert "PRIVATE_ISOLATED" in source
+    assert 'table_name = f"items-{stage}"' in source
+    assert "table_name=table_name" in source
+    assert '"stage": {"STAGE": stage}' in source
+    assert '"TABLE_NAME"' not in source
+    assert 'layers_path="layers"' in source
 
 
 def test_network_has_one_vpc_no_nat_and_two_gateway_endpoints(monkeypatch):
@@ -107,6 +112,37 @@ def test_vpc_uses_isolated_subnets_and_lambdas_use_them(monkeypatch):
     for function in functions:
         assert function["Properties"]["VpcConfig"]["SubnetIds"]
         assert function["Properties"]["VpcConfig"]["SecurityGroupIds"]
+
+
+def test_table_name_and_lambda_environment_use_the_stage(monkeypatch):
+    template = stack_template(monkeypatch)
+    table = next(iter(resources(template, "AWS::DynamoDB::Table").values()))
+    assert table["Properties"]["TableName"] == "items-develop"
+    functions = [
+        resource for resource in resources(template, "AWS::Lambda::Function").values()
+        if resource["Properties"].get("Handler") in {
+            "items.create_item", "items.get_item", "objects.put_object", "objects.get_object"
+        }
+    ]
+    assert len(functions) == 4
+    for function in functions:
+        variables = function["Properties"]["Environment"]["Variables"]
+        assert variables["STAGE"] == "develop"
+        assert "TABLE_NAME" not in variables
+
+
+def test_application_layer_is_attached_to_each_handler(monkeypatch):
+    template = stack_template(monkeypatch)
+    layers = resources(template, "AWS::Lambda::LayerVersion")
+    assert len(layers) == 1
+    layer_id = next(iter(layers))
+    functions = [
+        resource for resource in resources(template, "AWS::Lambda::Function").values()
+        if resource["Properties"].get("Handler") in {
+            "items.create_item", "items.get_item", "objects.put_object", "objects.get_object"
+        }
+    ]
+    assert all(layer_id in json.dumps(function["Properties"]["Layers"]) for function in functions)
 
 
 def test_four_application_lambdas_have_distinct_roles_and_handlers(monkeypatch):

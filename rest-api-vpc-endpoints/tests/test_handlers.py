@@ -1,14 +1,15 @@
+import ast
 import importlib
 import json
 import sys
-import ast
-from types import SimpleNamespace
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 
 ROOT = Path(__file__).parents[1]
+LAYER_PYTHON = ROOT / "layers" / "application" / "python"
 
 
 class FakeTable:
@@ -28,10 +29,7 @@ class FakeS3:
         self.objects = {}
 
     def put_object(self, *, Bucket, Key, Body, ContentType):
-        self.objects[(Bucket, Key)] = {
-            "Body": Body,
-            "ContentType": ContentType,
-        }
+        self.objects[(Bucket, Key)] = {"Body": Body, "ContentType": ContentType}
 
     def get_object(self, *, Bucket, Key):
         try:
@@ -54,7 +52,7 @@ def handlers(monkeypatch):
 
     class Resource:
         def Table(self, name):
-            assert name == "items-table"
+            assert name == "items-develop"
             return table
 
     class Client:
@@ -64,18 +62,33 @@ def handlers(monkeypatch):
         def get_object(self, **kwargs):
             return s3.get_object(**kwargs)
 
-    monkeypatch.setenv("TABLE_NAME", "items-table")
+    monkeypatch.setenv("STAGE", "develop")
     monkeypatch.setenv("BUCKET_NAME", "objects-bucket")
+    monkeypatch.delenv("TABLE_NAME", raising=False)
     monkeypatch.syspath_prepend(str(ROOT))
-    monkeypatch.syspath_prepend(str(ROOT / "lambdas"))
+    monkeypatch.syspath_prepend(str(LAYER_PYTHON))
     monkeypatch.setitem(
         sys.modules,
         "boto3",
-        SimpleNamespace(resource=lambda service: Resource(), client=lambda service: Client()),
+        SimpleNamespace(
+            resource=lambda service: Resource(), client=lambda service: Client()
+        ),
     )
-    for module_name in ("lambdas.items", "lambdas.objects"):
+    for module_name in (
+        "lambdas.items",
+        "lambdas.objects",
+        "service",
+        "repository",
+        "common",
+    ):
         sys.modules.pop(module_name, None)
-    return importlib.import_module("lambdas.items"), importlib.import_module("lambdas.objects"), table, s3
+    return (
+        importlib.import_module("lambdas.items"),
+        importlib.import_module("lambdas.objects"),
+        importlib.import_module("repository"),
+        table,
+        s3,
+    )
 
 
 def invoke(handler, event):
@@ -90,8 +103,13 @@ def body(result):
     return json.loads(result["body"])
 
 
+def test_repository_uses_stage_to_derive_table_name(handlers):
+    _items, _objects, repository, _table, _s3 = handlers
+    assert repository.table_name() == "items-develop"
+
+
 def test_create_item_parses_and_stores_item(handlers):
-    items, _objects, table, _s3 = handlers
+    items, _objects, _repository, table, _s3 = handlers
     result = invoke(items.create_item, {"body": '{"id":"1","value":"Ada"}'})
     assert result["statusCode"] == 201
     assert body(result) == {"id": "1", "value": "Ada"}
@@ -102,12 +120,12 @@ def test_create_item_parses_and_stores_item(handlers):
     "event", [{}, {"body": "not-json"}, {"body": "[]"}, {"body": "{}"}]
 )
 def test_create_item_rejects_invalid_or_incomplete_request(handlers, event):
-    items, _objects, _table, _s3 = handlers
+    items, _objects, _repository, _table, _s3 = handlers
     assert invoke(items.create_item, event)["statusCode"] == 400
 
 
 def test_get_item_returns_item_or_not_found(handlers):
-    items, _objects, _table, _s3 = handlers
+    items, _objects, _repository, _table, _s3 = handlers
     invoke(items.create_item, {"body": '{"id":"1","value":"Ada"}'})
     assert body(invoke(items.get_item, {"pathParameters": {"id": "1"}})) == {
         "id": "1",
@@ -117,15 +135,19 @@ def test_get_item_returns_item_or_not_found(handlers):
 
 
 def test_item_aws_errors_are_controlled(handlers, monkeypatch):
-    items, _objects, _table, _s3 = handlers
-    monkeypatch.setattr(items, "table", lambda: (_ for _ in ()).throw(RuntimeError("down")))
+    items, _objects, repository, _table, _s3 = handlers
+    monkeypatch.setattr(
+        repository,
+        "table",
+        lambda: (_ for _ in ()).throw(RuntimeError("down")),
+    )
     result = invoke(items.get_item, {"pathParameters": {"id": "1"}})
     assert result["statusCode"] == 502
     assert body(result) == {"error": "DynamoDB request failed"}
 
 
 def test_put_and_get_object_use_s3(handlers):
-    _items, objects, _table, s3 = handlers
+    _items, objects, _repository, _table, s3 = handlers
     result = invoke(
         objects.put_object,
         {"body": '{"key":"greeting.txt","body":"hello"}'},
@@ -137,32 +159,46 @@ def test_put_and_get_object_use_s3(handlers):
     assert body(result) == {"key": "greeting.txt", "body": "hello"}
 
 
-@pytest.mark.parametrize("event", [{}, {"body": ""}, {"body": "{\"key\":\"x\"}"}])
+@pytest.mark.parametrize("event", [{}, {"body": ""}, {"body": '{"key":"x"}'}])
 def test_put_object_rejects_missing_key_or_body(handlers, event):
-    _items, objects, _table, _s3 = handlers
+    _items, objects, _repository, _table, _s3 = handlers
     assert invoke(objects.put_object, event)["statusCode"] == 400
 
 
 def test_get_object_returns_not_found(handlers):
-    _items, objects, _table, _s3 = handlers
+    _items, objects, _repository, _table, _s3 = handlers
     result = invoke(objects.get_object, {"pathParameters": {"key": "missing.txt"}})
     assert result["statusCode"] == 404
     assert body(result) == {"error": "Object not found"}
 
 
-def test_each_handler_has_exactly_one_route():
-    root = Path(__file__).parents[1]
+def test_each_handler_has_exactly_one_route_and_uses_the_application_layer():
     for filename, names in {
         "items.py": ("create_item", "get_item"),
         "objects.py": ("put_object", "get_object"),
     }.items():
-        tree = ast.parse((root / "lambdas" / filename).read_text())
+        source = (ROOT / "lambdas" / filename).read_text()
+        tree = ast.parse(source)
+        assert '@layer("application")' in source
         for name in names:
-            function = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == name)
+            function = next(
+                node
+                for node in tree.body
+                if isinstance(node, ast.FunctionDef) and node.name == name
+            )
             routes = [
-                decorator for decorator in function.decorator_list
+                decorator
+                for decorator in function.decorator_list
                 if isinstance(decorator, ast.Call)
                 and isinstance(decorator.func, ast.Name)
-                and decorator.func.id in {"GET", "POST", "PUT", "DELETE", "ANY"}
+                and decorator.func.id in {"GET", "POST", "DELETE", "PUT", "ANY"}
             ]
             assert len(routes) == 1
+
+
+def test_layer_contains_common_repository_and_service():
+    assert {path.name for path in LAYER_PYTHON.glob("*.py")} == {
+        "common.py",
+        "repository.py",
+        "service.py",
+    }
