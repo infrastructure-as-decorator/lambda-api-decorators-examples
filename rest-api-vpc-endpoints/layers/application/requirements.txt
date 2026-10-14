@@ -1,0 +1,1 @@
+# Application code is self-contained; boto3 is supplied by the Lambda runtime.

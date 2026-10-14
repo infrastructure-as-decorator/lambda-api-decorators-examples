@@ -1,0 +1,9 @@
+{
+  "app": "python app.py",
+  "context": {
+    "stage": "develop",
+    "@aws-cdk/aws-lambda:recognizeLayerVersion": true,
+    "@aws-cdk/core:enablePathMetadata": false,
+    "@aws-cdk/core:stackRelativeExports": true
+  }
+}
