@@ -42,8 +42,9 @@ EXPECTED_ROUTES = {
 EXPECTED_HELPERS = {
     "JSON_HEADERS",
     "REQUIRED_FIELDS",
-    "ORDERS_TABLE_NAME",
+    "DEFAULT_STAGE",
     "table",
+    "table_name",
     "list_order_records",
     "find_order",
     "create_order_record",
@@ -106,14 +107,15 @@ def decorator_signature(node):
     )
 
 
-def synthesized(monkeypatch):
+def synthesized(monkeypatch, stage=None):
     if not DOCKER_AVAILABLE:
         pytest.skip("Docker is unavailable for CDK PythonFunction bundling")
     monkeypatch.syspath_prepend(str(ROOT))
     monkeypatch.chdir(ROOT)
     from rest_api_dynamodb.rest_api_dynamodb_stack import RestApiDynamodbStack
 
-    return Template.from_stack(RestApiDynamodbStack(cdk.App(), "TestRestApiDynamodbStack"))
+    app = cdk.App(context={"stage": stage}) if stage else cdk.App()
+    return Template.from_stack(RestApiDynamodbStack(app, "TestRestApiDynamodbStack"))
 
 
 def test_lambdas_are_grouped_in_one_orders_module():
@@ -241,7 +243,7 @@ def test_stack_has_real_table_rest_api_five_lambdas_layer_and_destroy_policy(mon
         "AWS::DynamoDB::Table",
         {
             "BillingMode": "PAY_PER_REQUEST",
-            "TableName": "Orders",
+            "TableName": "dev-orders",
             "AttributeDefinitions": [{"AttributeName": "id", "AttributeType": "S"}],
             "KeySchema": [{"AttributeName": "id", "KeyType": "HASH"}],
         },
@@ -311,9 +313,23 @@ def test_default_and_post_lambda_configuration(monkeypatch):
     assert properties["MemorySize"] == 1024
     assert properties["Timeout"] == 15
     assert properties["Description"] == "Configured endpoint"
+    assert properties["Environment"]["Variables"]["STAGE"] == "dev"
     assert set(properties["Environment"]["Variables"]) >= {"SERVICE", "STAGE"}
     assert "TABLE_NAME" not in properties["Environment"]["Variables"]
     assert properties["Role"]["Fn::GetAtt"][0].startswith("ApiRole")
+
+
+def test_stage_context_names_table_and_lambda_environment(monkeypatch):
+    template = synthesized(monkeypatch, stage="testing")
+    template.has_resource_properties(
+        "AWS::DynamoDB::Table",
+        {"TableName": "testing-orders"},
+    )
+    functions = template.find_resources("AWS::Lambda::Function")
+    assert all(
+        function["Properties"]["Environment"]["Variables"]["STAGE"] == "testing"
+        for function in functions.values()
+    )
 
 
 def test_dynamodb_permissions_reference_the_table(monkeypatch):

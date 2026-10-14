@@ -12,10 +12,13 @@ class RestApiDynamodbStack(Stack):
     def __init__(self, scope: Construct, construct_id: str, **kwargs) -> None:
         super().__init__(scope, construct_id, **kwargs)
 
+        stage = self.node.try_get_context("stage") or "dev"
+        table_name = f"{stage}-orders"
+
         table = dynamodb.Table(
             self,
             "Orders",
-            table_name="Orders",
+            table_name=table_name,
             partition_key=dynamodb.Attribute(
                 name="id", type=dynamodb.AttributeType.STRING
             ),
@@ -45,7 +48,7 @@ class RestApiDynamodbStack(Stack):
             default_runtime="python3.14",
             common_environment={"SERVICE": "orders"},
             environment_registry={
-                "STAGE": {"STAGE": "dev"},
+                "STAGE": {"STAGE": stage},
             },
             role_registry={"api-role": api_role},
             dynamodb_table_registry={"orders": table},

@@ -1,10 +1,11 @@
 # REST API + DynamoDB
 
 Independent AWS CDK Python example that builds a REST API backed by a real
-DynamoDB table named `Orders`. It also creates an audit bucket whose read
-permissions demonstrate role configuration. The five functions are grouped by
-resource in `lambdas/orders.py`, while persistence functions and shared runtime
-code are provided by the `orders` AWS Lambda Layer.
+DynamoDB table named `<stage>-orders` (for example, `dev-orders`). It also
+creates an audit bucket whose read permissions demonstrate role configuration.
+The five functions are grouped by resource in `lambdas/orders.py`, while
+persistence functions and shared runtime code are provided by the `orders` AWS
+Lambda Layer.
 
 ## Architecture
 
@@ -51,9 +52,11 @@ rest-api-dynamodb/
 `lambda_path="lambdas"` and `layers_path="layers"` to `LambdaApi`, so the
 published Layer directory is discovered and attached to each function.
 
-The physical table name is the deterministic fixed name `Orders`, defined as
-`ORDERS_TABLE_NAME` in the Layer and explicitly used by the CDK table. Lambda
-functions receive `STAGE` for stage metadata; they do not receive a
+The physical table name is deterministic and derived from `STAGE` as
+`<stage>-orders`. The default stage is `dev`, so the default table is
+`dev-orders`. The Layer derives the name from `STAGE` when it obtains the
+DynamoDB resource, and the CDK stack uses the same stage and convention for
+the physical table. Lambda functions receive `STAGE`; they do not receive a
 `TABLE_NAME` environment setting. The existing
 `@grant_dynamodb("orders", "read")` and
 `@grant_dynamodb("orders", "write")` declarations provide IAM access.

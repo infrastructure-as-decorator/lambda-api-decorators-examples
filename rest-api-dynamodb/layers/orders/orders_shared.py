@@ -1,15 +1,21 @@
 import json
+import os
 
 import boto3
 
 
 JSON_HEADERS = {"Content-Type": "application/json"}
 REQUIRED_FIELDS = ("customer", "total", "status")
-ORDERS_TABLE_NAME = "Orders"
+DEFAULT_STAGE = "dev"
+
+
+def table_name():
+    stage = os.environ.get("STAGE", DEFAULT_STAGE)
+    return f"{stage}-orders"
 
 
 def table():
-    return boto3.resource("dynamodb").Table(ORDERS_TABLE_NAME)
+    return boto3.resource("dynamodb").Table(table_name())
 
 
 def list_order_records():

@@ -40,7 +40,7 @@ class FakeResource:
         self.table_value = table
 
     def Table(self, name):
-        assert name == "Orders"
+        assert name == "test-orders"
         return self.table_value
 
 
@@ -82,6 +82,16 @@ def test_list_orders_returns_200_and_json_list(handlers):
     assert result["statusCode"] == 200
     assert payload(result) == [{"id": "1", "customer": "Ada", "total": 10}]
     assert table.items["1"]["customer"] == "Ada"
+
+
+def test_table_name_uses_dev_by_default_and_stage_when_configured(handlers, monkeypatch):
+    _table, module = handlers
+    import orders_shared
+
+    monkeypatch.delenv("STAGE")
+    assert orders_shared.table_name() == "dev-orders"
+    monkeypatch.setenv("STAGE", "testing")
+    assert orders_shared.table_name() == "testing-orders"
 
 
 @pytest.mark.parametrize("order_id, status", [("1", 200), ("missing", 404)])
