@@ -11,7 +11,7 @@ class QuickstartRestStack(Stack):
             runtime=lambda_.Runtime.PYTHON_3_14,
         )
 
-        LambdaApi(
+        api = LambdaApi(
             self,
             "Api",
             lambda_path="lambdas",

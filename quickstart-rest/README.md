@@ -3,6 +3,10 @@
 This independent AWS CDK app defines a default REST API backed by a single
 Lambda handler for `GET /hello`.
 
+The automatically created REST API is Edge-Optimized by default, so the stack
+does not need an `endpoint_type` argument. API Gateway uses an AWS-managed
+CloudFront distribution for this endpoint.
+
 ## Project links
 
 - [Project site](https://infrastructure-as-decorator.github.io/)

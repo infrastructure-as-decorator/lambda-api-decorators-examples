@@ -1,4 +1,5 @@
 from aws_cdk import CfnOutput, RemovalPolicy, Stack
+from aws_cdk import aws_apigateway as apigateway
 from aws_cdk import aws_dynamodb as dynamodb
 from aws_cdk import aws_iam as iam
 from aws_cdk import aws_lambda as lambda_
@@ -57,5 +58,6 @@ class RestApiDynamodbStack(Stack):
             lambda_path="lambdas",
             layers_path="layers",
             config=config,
+            endpoint_type=apigateway.EndpointType.REGIONAL,
         )
         CfnOutput(self, "ApiUrl", value=api.api.url)

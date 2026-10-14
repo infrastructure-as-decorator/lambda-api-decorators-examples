@@ -24,6 +24,11 @@ The handlers import `orders_shared` from the `orders` Layer through the
 standard Lambda `/opt/python` import root. `@layer("orders")` associates every
 function with that Layer; the Layer does not grant DynamoDB permissions.
 
+This example explicitly selects a Regional REST API with
+`apigateway.EndpointType.REGIONAL`. Regional APIs do not use API Gateway's
+managed Edge-Optimized CloudFront distribution. To select EDGE instead, omit
+`endpoint_type` or specify `apigateway.EndpointType.EDGE`.
+
 ## Project layout
 
 ```text
