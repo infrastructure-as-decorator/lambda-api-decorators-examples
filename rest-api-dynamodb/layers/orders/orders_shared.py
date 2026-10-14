@@ -1,5 +1,6 @@
 import json
 import os
+from decimal import Decimal
 
 import boto3
 
@@ -42,11 +43,21 @@ def delete_order_record(order_id):
     ).get("Attributes")
 
 
+def json_default(value):
+    if isinstance(value, Decimal):
+        return int(value) if value == value.to_integral_value() else float(value)
+    raise TypeError(
+        f"Object of type {type(value).__name__} is not JSON serializable"
+    )
+
+
 def response(status_code, payload):
     return {
         "statusCode": status_code,
         "headers": JSON_HEADERS,
-        "body": "" if status_code == 204 else json.dumps(payload),
+        "body": ""
+        if status_code == 204
+        else json.dumps(payload, default=json_default),
     }
 
 
