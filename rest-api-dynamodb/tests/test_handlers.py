@@ -1,6 +1,7 @@
 import importlib
 import json
 import sys
+from decimal import Decimal
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -47,7 +48,9 @@ class FakeResource:
 @pytest.fixture
 def handlers(monkeypatch):
     """Expose the layer exactly as AWS does through /opt/python."""
-    table = FakeTable([{"id": "1", "customer": "Ada", "total": 10}])
+    table = FakeTable(
+        [{"id": "1", "customer": "Ada", "total": Decimal("10.50")}]
+    )
     monkeypatch.setenv("STAGE", "test")
     monkeypatch.syspath_prepend(str(ROOT))
     monkeypatch.syspath_prepend(str(LAYER_DIR))
@@ -80,8 +83,14 @@ def test_list_orders_returns_200_and_json_list(handlers):
     table, module = handlers
     result = invoke(module, "list_orders", {})
     assert result["statusCode"] == 200
-    assert payload(result) == [{"id": "1", "customer": "Ada", "total": 10}]
+    assert payload(result) == [{"id": "1", "customer": "Ada", "total": 10.5}]
     assert table.items["1"]["customer"] == "Ada"
+
+
+def test_response_serializes_dynamodb_decimal_values(handlers):
+    _table, module = handlers
+    result = module.response(200, {"total": Decimal("10.50")})
+    assert payload(result) == {"total": 10.5}
 
 
 def test_table_name_uses_dev_by_default_and_stage_when_configured(handlers, monkeypatch):

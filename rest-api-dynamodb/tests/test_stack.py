@@ -50,6 +50,7 @@ EXPECTED_HELPERS = {
     "create_order_record",
     "update_order_record",
     "delete_order_record",
+    "json_default",
     "response",
     "request_json",
     "order_id",
