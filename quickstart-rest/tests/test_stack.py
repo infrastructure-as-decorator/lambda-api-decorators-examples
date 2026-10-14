@@ -53,6 +53,10 @@ def test_stack_contains_rest_api_get_method_and_python_lambda():
     template = Template.from_stack(stack)
 
     template.resource_count_is("AWS::ApiGateway::RestApi", 1)
+    template.has_resource_properties(
+        "AWS::ApiGateway::RestApi",
+        {"EndpointConfiguration": {"Types": ["EDGE"]}},
+    )
     template.resource_count_is("AWS::Lambda::Function", 1)
     template.has_resource_properties(
         "AWS::ApiGateway::Method",

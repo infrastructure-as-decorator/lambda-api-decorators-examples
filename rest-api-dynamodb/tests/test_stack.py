@@ -214,6 +214,10 @@ def test_post_decorator_contract_is_exact_except_for_layer_selection():
 def test_stack_has_real_table_rest_api_five_lambdas_layer_and_destroy_policy(monkeypatch):
     template = synthesized(monkeypatch)
     template.resource_count_is("AWS::ApiGateway::RestApi", 1)
+    template.has_resource_properties(
+        "AWS::ApiGateway::RestApi",
+        {"EndpointConfiguration": {"Types": ["REGIONAL"]}},
+    )
     template.resource_count_is("AWS::DynamoDB::Table", 1)
     template.resource_count_is("AWS::Lambda::Function", 5)
     template.resource_count_is("AWS::Lambda::LayerVersion", 1)
