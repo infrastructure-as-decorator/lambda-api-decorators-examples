@@ -10,10 +10,10 @@ from service import (
 )
 
 
-@POST("/items")
 @layer("application")
 @environment("stage")
 @grant_dynamodb("items", "write")
+@POST("/items")
 def create_item(event, context):
     item, error = request_json(event)
     if error:
@@ -26,10 +26,10 @@ def create_item(event, context):
         return response(502, {"error": "DynamoDB request failed"})
 
 
-@GET("/items/{id}")
 @layer("application")
 @environment("stage")
 @grant_dynamodb("items", "read")
+@GET("/items/{id}")
 def get_item(event, context):
     identifier = path_parameter(event, "id")
     if not identifier:

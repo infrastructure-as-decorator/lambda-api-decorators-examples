@@ -10,10 +10,10 @@ from service import (
 )
 
 
-@POST("/objects")
 @layer("application")
 @environment("stage", "objects")
 @grant_s3("objects", "write")
+@POST("/objects")
 def put_object(event, context):
     payload, error = request_json(event)
     if error:
@@ -27,10 +27,10 @@ def put_object(event, context):
     return response(201, {"key": key})
 
 
-@GET("/objects/{key}")
 @layer("application")
 @environment("stage", "objects")
 @grant_s3("objects", "read")
+@GET("/objects/{key}")
 def get_object(event, context):
     key = path_parameter(event, "key")
     if not key:

@@ -3,8 +3,8 @@
 Independent AWS CDK Python example that builds a REST API backed by a real
 DynamoDB table named `Orders`. It also creates an audit bucket whose read
 permissions demonstrate role configuration. The five functions are grouped by
-resource in `lambdas/orders.py`, while shared runtime code is provided by the
-`orders` AWS Lambda Layer.
+resource in `lambdas/orders.py`, while persistence functions and shared runtime
+code are provided by the `orders` AWS Lambda Layer.
 
 ## Architecture
 
@@ -23,6 +23,9 @@ functions. Each function declares exactly one route:
 The handlers import `orders_shared` from the `orders` Layer through the
 standard Lambda `/opt/python` import root. `@layer("orders")` associates every
 function with that Layer; the Layer does not grant DynamoDB permissions.
+Handlers parse requests, validate input, and create HTTP responses. The Layer
+owns table access through `list_order_records`, `find_order`,
+`create_order_record`, `update_order_record`, and `delete_order_record`.
 
 This example explicitly selects a Regional REST API with
 `apigateway.EndpointType.REGIONAL`. Regional APIs do not use API Gateway's
@@ -40,8 +43,7 @@ rest-api-dynamodb/
 └── layers/
     └── orders/
         ├── requirements.txt
-        └── python/
-            └── orders_shared.py
+        └── orders_shared.py
 ```
 
 `lambdas/orders.py` contains `list_orders`, `get_order`, `create_order`,
@@ -49,10 +51,21 @@ rest-api-dynamodb/
 `lambda_path="lambdas"` and `layers_path="layers"` to `LambdaApi`, so the
 published Layer directory is discovered and attached to each function.
 
+The physical table name is the deterministic fixed name `Orders`, defined as
+`ORDERS_TABLE_NAME` in the Layer and explicitly used by the CDK table. Lambda
+functions receive `STAGE` for stage metadata; they do not receive a
+`TABLE_NAME` environment setting. The existing
+`@grant_dynamodb("orders", "read")` and
+`@grant_dynamodb("orders", "write")` declarations provide IAM access.
+
+Each handler has one HTTP route, and the route decorator is immediately above
+the handler definition. Other decorators configure the Layer, grants, and
+Lambda settings above that route decorator.
+
 The POST function demonstrates named configuration with Python 3.12, 1024 MB,
-15 seconds, `STAGE` and `TABLE_NAME`, the mutable `api-role`, and the function
-name `configured-handler`. Other functions use independent CDK-created roles
-and the default Python 3.14 runtime. `api-role` receives read access to the
+15 seconds, `STAGE`, the mutable `api-role`, and the function name
+`configured-handler`. Other functions use independent CDK-created roles and
+the default Python 3.14 runtime. `api-role` receives read access to the
 audit bucket through `grant_read`; the handlers do not use that bucket.
 
 ## Prerequisites
