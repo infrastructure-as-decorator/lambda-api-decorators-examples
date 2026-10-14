@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import pytest
 
 ROOT = Path(__file__).parents[1]
-LAYER_PYTHON_DIR = ROOT / "layers" / "orders" / "python"
+LAYER_DIR = ROOT / "layers" / "orders"
 pytest.importorskip(
     "lambda_api_decorators",
     reason="published lambda-api-decorators is not installed",
@@ -26,6 +26,8 @@ class FakeTable:
         return {} if item is None else {"Item": dict(item)}
 
     def put_item(self, *, Item, **kwargs):
+        if kwargs.get("ConditionExpression") and Item["id"] in self.items:
+            raise RuntimeError("ConditionalCheckFailedException")
         self.items[Item["id"]] = dict(Item)
 
     def delete_item(self, *, Key, **kwargs):
@@ -38,7 +40,7 @@ class FakeResource:
         self.table_value = table
 
     def Table(self, name):
-        assert name == "Orders-test"
+        assert name == "Orders"
         return self.table_value
 
 
@@ -46,10 +48,9 @@ class FakeResource:
 def handlers(monkeypatch):
     """Expose the layer exactly as AWS does through /opt/python."""
     table = FakeTable([{"id": "1", "customer": "Ada", "total": 10}])
-    monkeypatch.setenv("TABLE_NAME", "Orders-test")
     monkeypatch.setenv("STAGE", "test")
     monkeypatch.syspath_prepend(str(ROOT))
-    monkeypatch.syspath_prepend(str(LAYER_PYTHON_DIR))
+    monkeypatch.syspath_prepend(str(LAYER_DIR))
     monkeypatch.setitem(
         sys.modules,
         "boto3",
@@ -59,7 +60,6 @@ def handlers(monkeypatch):
         sys.modules.pop(module_name, None)
 
     handlers_module = importlib.import_module("lambdas.orders")
-    handlers_module.table = lambda: table
     return table, handlers_module
 
 
@@ -100,6 +100,13 @@ def test_create_order_requires_id_stores_object_and_returns_201(handlers):
     assert result["statusCode"] == 201
     assert payload(result) == order
     assert table.items["2"] == order
+
+
+def test_create_order_keeps_conditional_write_behavior(handlers):
+    table, module = handlers
+    with pytest.raises(RuntimeError, match="ConditionalCheckFailedException"):
+        module.create_order({"body": json.dumps({"id": "1"})}, None)
+    assert table.items["1"]["customer"] == "Ada"
 
 
 def test_update_order_uses_path_id_updates_and_returns_200(handlers):

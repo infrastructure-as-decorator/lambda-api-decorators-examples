@@ -24,7 +24,6 @@ from aws_cdk.assertions import Template
 ROOT = Path(__file__).parents[1]
 LAMBDA_DIR = ROOT / "lambdas"
 LAYER_DIR = ROOT / "layers" / "orders"
-LAYER_PYTHON_DIR = LAYER_DIR / "python"
 DOCKER_AVAILABLE = bool(shutil.which("docker")) and subprocess.run(
     ["docker", "info"],
     stdout=subprocess.DEVNULL,
@@ -43,7 +42,13 @@ EXPECTED_ROUTES = {
 EXPECTED_HELPERS = {
     "JSON_HEADERS",
     "REQUIRED_FIELDS",
+    "ORDERS_TABLE_NAME",
     "table",
+    "list_order_records",
+    "find_order",
+    "create_order_record",
+    "update_order_record",
+    "delete_order_record",
     "response",
     "request_json",
     "order_id",
@@ -127,9 +132,10 @@ def test_lambdas_are_grouped_in_one_orders_module():
 
 
 def test_layer_uses_python_import_root_and_contains_only_shared_helpers():
-    source = LAYER_PYTHON_DIR / "orders_shared.py"
+    source = LAYER_DIR / "orders_shared.py"
     assert source.is_file()
     assert (LAYER_DIR / "requirements.txt").is_file()
+    assert not (LAYER_DIR / "python").exists()
 
     tree = parse(source)
     names = {
@@ -171,6 +177,7 @@ def test_orders_module_has_five_handlers_one_route_and_one_registered_layer():
         layers = layer_decorators(functions[name])
         assert len(layers) == 1
         assert decorator_signature(layers[0]) == ("layer", ("orders",), ())
+        assert call_name(functions[name].decorator_list[-1].func) == method
 
 
 def test_orders_module_imports_helpers_from_layer():
@@ -179,7 +186,16 @@ def test_orders_module_imports_helpers_from_layer():
     assert any(
         node.module == "orders_shared"
         and {alias.name for alias in node.names}
-        >= {"order_id", "request_json", "response", "table"}
+        >= {
+            "create_order_record",
+            "delete_order_record",
+            "find_order",
+            "list_order_records",
+            "order_id",
+            "request_json",
+            "response",
+            "update_order_record",
+        }
         for node in imports
     )
 
@@ -199,15 +215,15 @@ def test_post_decorator_contract_is_exact_except_for_layer_selection():
         if call_name(decorator.func) != "layer"
     ]
     assert actual == [
-        ("POST", ("/orders",), ()),
         ("grant_dynamodb", ("orders", "write"), ()),
         ("memory_size", (1024,), ()),
         ("timeout", (15,), ()),
-        ("environment", ("STAGE", "TABLE_NAME"), ()),
+        ("environment", ("STAGE",), ()),
         ("runtime", ("python3.12",), ()),
         ("role", ("api-role",), ()),
         ("description", ("Configured endpoint",), ()),
         ("name", ("configured-handler",), ()),
+        ("POST", ("/orders",), ()),
     ]
 
 
@@ -225,6 +241,7 @@ def test_stack_has_real_table_rest_api_five_lambdas_layer_and_destroy_policy(mon
         "AWS::DynamoDB::Table",
         {
             "BillingMode": "PAY_PER_REQUEST",
+            "TableName": "Orders",
             "AttributeDefinitions": [{"AttributeName": "id", "AttributeType": "S"}],
             "KeySchema": [{"AttributeName": "id", "KeyType": "HASH"}],
         },
@@ -294,7 +311,8 @@ def test_default_and_post_lambda_configuration(monkeypatch):
     assert properties["MemorySize"] == 1024
     assert properties["Timeout"] == 15
     assert properties["Description"] == "Configured endpoint"
-    assert set(properties["Environment"]["Variables"]) >= {"STAGE", "TABLE_NAME"}
+    assert set(properties["Environment"]["Variables"]) >= {"SERVICE", "STAGE"}
+    assert "TABLE_NAME" not in properties["Environment"]["Variables"]
     assert properties["Role"]["Fn::GetAtt"][0].startswith("ApiRole")
 
 

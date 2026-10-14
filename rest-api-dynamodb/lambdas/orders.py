@@ -14,74 +14,79 @@ from lambda_api_decorators import (
     timeout,
 )
 
-from orders_shared import order_id, request_json, response, table
+from orders_shared import (
+    create_order_record,
+    delete_order_record,
+    find_order,
+    list_order_records,
+    order_id,
+    request_json,
+    response,
+    update_order_record,
+)
 
 
+@layer("orders")
+@grant_dynamodb("orders", "read")
+@environment("STAGE")
 @GET("/orders")
-@layer("orders")
-@grant_dynamodb("orders", "read")
-@environment("TABLE_NAME")
 def list_orders(event, context):
-    items = table().scan().get("Items", [])
-    return response(200, items)
+    return response(200, list_order_records())
 
 
-@GET("/orders/{id}")
 @layer("orders")
 @grant_dynamodb("orders", "read")
-@environment("TABLE_NAME")
+@environment("STAGE")
+@GET("/orders/{id}")
 def get_order(event, context):
-    item = table().get_item(Key={"id": order_id(event)}).get("Item")
+    item = find_order(order_id(event))
     if item is None:
         return response(404, {"error": "Order not found"})
     return response(200, item)
 
 
-@POST("/orders")
 @layer("orders")
 @grant_dynamodb("orders", "write")
 @memory_size(1024)
 @timeout(15)
-@environment("STAGE", "TABLE_NAME")
+@environment("STAGE")
 @runtime("python3.12")
 @role("api-role")
 @description("Configured endpoint")
 @name("configured-handler")
+@POST("/orders")
 def create_order(event, context):
     order, error = request_json(event)
     if error:
         return error
     if "id" not in order:
         return response(400, {"error": "Missing required fields", "fields": ["id"]})
-    table().put_item(Item=order, ConditionExpression="attribute_not_exists(id)")
+    create_order_record(order)
     return response(201, order)
 
 
-@PUT("/orders/{id}")
 @layer("orders")
 @grant_dynamodb("orders", "write")
-@environment("TABLE_NAME")
+@environment("STAGE")
+@PUT("/orders/{id}")
 def update_order(event, context):
     identifier = order_id(event)
     order, error = request_json(event)
     if error:
         return error
-    existing = table().get_item(Key={"id": identifier}).get("Item")
+    existing = find_order(identifier)
     if existing is None:
         return response(404, {"error": "Order not found"})
-    updated = {"id": identifier, **order}
-    table().put_item(Item=updated)
+    updated = update_order_record(identifier, order)
     return response(200, updated)
 
 
-@DELETE("/orders/{id}")
 @layer("orders")
 @grant_dynamodb("orders", "write")
-@environment("TABLE_NAME")
+@environment("STAGE")
+@DELETE("/orders/{id}")
 def delete_order(event, context):
-    deleted = table().delete_item(
-        Key={"id": order_id(event)}, ReturnValues="ALL_OLD"
-    ).get("Attributes")
+    deleted = delete_order_record(order_id(event))
     if deleted is None:
         return response(404, {"error": "Order not found"})
     return response(204, None)

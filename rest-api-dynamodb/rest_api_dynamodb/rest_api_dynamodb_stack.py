@@ -46,7 +46,6 @@ class RestApiDynamodbStack(Stack):
             common_environment={"SERVICE": "orders"},
             environment_registry={
                 "STAGE": {"STAGE": "dev"},
-                "TABLE_NAME": {"TABLE_NAME": table.table_name},
             },
             role_registry={"api-role": api_role},
             dynamodb_table_registry={"orders": table},
