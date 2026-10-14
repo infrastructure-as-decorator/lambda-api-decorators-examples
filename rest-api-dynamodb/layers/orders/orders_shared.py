@@ -6,10 +6,40 @@ import boto3
 
 JSON_HEADERS = {"Content-Type": "application/json"}
 REQUIRED_FIELDS = ("customer", "total", "status")
+DEFAULT_STAGE = "dev"
+
+
+def table_name():
+    stage = os.environ.get("STAGE", DEFAULT_STAGE)
+    return f"{stage}-orders"
 
 
 def table():
-    return boto3.resource("dynamodb").Table(os.environ["TABLE_NAME"])
+    return boto3.resource("dynamodb").Table(table_name())
+
+
+def list_order_records():
+    return table().scan().get("Items", [])
+
+
+def find_order(order_id):
+    return table().get_item(Key={"id": order_id}).get("Item")
+
+
+def create_order_record(order):
+    table().put_item(Item=order, ConditionExpression="attribute_not_exists(id)")
+
+
+def update_order_record(order_id, order):
+    updated = {"id": order_id, **order}
+    table().put_item(Item=updated)
+    return updated
+
+
+def delete_order_record(order_id):
+    return table().delete_item(
+        Key={"id": order_id}, ReturnValues="ALL_OLD"
+    ).get("Attributes")
 
 
 def response(status_code, payload):

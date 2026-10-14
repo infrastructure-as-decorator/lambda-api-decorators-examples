@@ -49,7 +49,7 @@ rest-api-vpc-endpoints/
 
 Each Python function declares exactly one route. The two modules are grouped only to keep the example small; CDK still creates one Lambda and one execution role per handler.
 
-The `application` Lambda Layer contains the three application layers used by the handlers: `common.py` contains HTTP helpers, `service.py` contains validation and application behavior, and `repository.py` contains AWS SDK access. The handlers remain thin route adapters.
+The `application` Lambda Layer contains the three application layers used by the handlers: `common.py` contains HTTP helpers, `service.py` contains validation and application behavior, and `repository.py` contains AWS SDK access. The handlers remain thin route adapters. Each handler declares exactly one HTTP route, with its `@GET` or `@POST` decorator immediately above the function definition.
 
 ## Registries, grants, and IAM
 

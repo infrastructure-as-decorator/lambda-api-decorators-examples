@@ -6,8 +6,8 @@ from lambda_api_decorators import CurrentUserError, GET, current_user, public
 JSON_HEADERS = {"Content-Type": "application/json"}
 
 
-@GET("/health")
 @public
+@GET("/health")
 def health(event, context):
     return {
         "statusCode": 200,
