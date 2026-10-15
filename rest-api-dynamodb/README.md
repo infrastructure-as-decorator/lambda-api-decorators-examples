@@ -154,6 +154,22 @@ curl -X PUT "$API_URL/orders/123" -H 'content-type: application/json' \
 curl -i -X DELETE "$API_URL/orders/123"
 ```
 
+`POST /orders` returns `201 Created` when the order is created and `409
+Conflict` when an order with the same `id` already exists. The Layer uses
+DynamoDB's atomic conditional write (`attribute_not_exists(id)`) so an
+existing order cannot be overwritten.
+
+To reproduce the duplicate-order response, send the same order twice:
+
+```bash
+ORDER='{"id":"duplicate-example","customer":"Ada","total":10,"status":"new"}'
+curl -i -X POST "$API_URL/orders" -H 'content-type: application/json' -d "$ORDER"
+# HTTP/1.1 201 Created
+curl -i -X POST "$API_URL/orders" -H 'content-type: application/json' -d "$ORDER"
+# HTTP/1.1 409 Conflict
+# {"error": "Order already exists"}
+```
+
 ## Destroy
 
 ```bash

@@ -3,11 +3,16 @@ import os
 from decimal import Decimal
 
 import boto3
+from botocore.exceptions import ClientError
 
 
 JSON_HEADERS = {"Content-Type": "application/json"}
 REQUIRED_FIELDS = ("customer", "total", "status")
 DEFAULT_STAGE = "dev"
+
+
+class OrderAlreadyExists(Exception):
+    pass
 
 
 def table_name():
@@ -28,7 +33,12 @@ def find_order(order_id):
 
 
 def create_order_record(order):
-    table().put_item(Item=order, ConditionExpression="attribute_not_exists(id)")
+    try:
+        table().put_item(Item=order, ConditionExpression="attribute_not_exists(id)")
+    except ClientError as exc:
+        if exc.response.get("Error", {}).get("Code") == "ConditionalCheckFailedException":
+            raise OrderAlreadyExists from exc
+        raise
 
 
 def update_order_record(order_id, order):

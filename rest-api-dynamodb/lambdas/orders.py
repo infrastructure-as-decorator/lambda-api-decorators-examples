@@ -15,6 +15,7 @@ from lambda_api_decorators import (
 )
 
 from orders_shared import (
+    OrderAlreadyExists,
     create_order_record,
     delete_order_record,
     find_order,
@@ -61,7 +62,10 @@ def create_order(event, context):
         return error
     if "id" not in order:
         return response(400, {"error": "Missing required fields", "fields": ["id"]})
-    create_order_record(order)
+    try:
+        create_order_record(order)
+    except OrderAlreadyExists:
+        return response(409, {"error": "Order already exists"})
     return response(201, order)
 
 
