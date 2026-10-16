@@ -6,6 +6,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from botocore.exceptions import ClientError
 
 ROOT = Path(__file__).parents[1]
 LAYER_DIR = ROOT / "layers" / "orders"
@@ -28,7 +29,15 @@ class FakeTable:
 
     def put_item(self, *, Item, **kwargs):
         if kwargs.get("ConditionExpression") and Item["id"] in self.items:
-            raise RuntimeError("ConditionalCheckFailedException")
+            raise ClientError(
+                {
+                    "Error": {
+                        "Code": "ConditionalCheckFailedException",
+                        "Message": "The conditional request failed",
+                    }
+                },
+                "PutItem",
+            )
         self.items[Item["id"]] = dict(Item)
 
     def delete_item(self, *, Key, **kwargs):
@@ -121,11 +130,40 @@ def test_create_order_requires_id_stores_object_and_returns_201(handlers):
     assert table.items["2"] == order
 
 
-def test_create_order_keeps_conditional_write_behavior(handlers):
+def test_create_order_returns_409_for_duplicate_id(handlers):
     table, module = handlers
-    with pytest.raises(RuntimeError, match="ConditionalCheckFailedException"):
-        module.create_order({"body": json.dumps({"id": "1"})}, None)
+    result = invoke(module, "create_order", {"body": json.dumps({"id": "1"})})
+    assert result["statusCode"] == 409
+    assert payload(result) == {"error": "Order already exists"}
     assert table.items["1"]["customer"] == "Ada"
+
+
+def test_create_order_delegates_persistence(handlers, monkeypatch):
+    _table, module = handlers
+    order = {"id": "2", "customer": "Lin"}
+    calls = []
+
+    def fake_create_order_record(value):
+        calls.append(value)
+
+    monkeypatch.setattr(module, "create_order_record", fake_create_order_record)
+    result = invoke(module, "create_order", {"body": json.dumps(order)})
+
+    assert result["statusCode"] == 201
+    assert calls == [order]
+
+
+def test_create_order_does_not_convert_unexpected_persistence_errors_to_409(
+    handlers, monkeypatch
+):
+    _table, module = handlers
+
+    def fail(_order):
+        raise RuntimeError("DynamoDB unavailable")
+
+    monkeypatch.setattr(module, "create_order_record", fail)
+    with pytest.raises(RuntimeError, match="DynamoDB unavailable"):
+        module.create_order({"body": json.dumps({"id": "2"})}, None)
 
 
 def test_update_order_uses_path_id_updates_and_returns_200(handlers):
